@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'; connect-src 'self'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>SatRadar</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<div id="app">
+  <main id="zona-radar">
+    <canvas id="radar"></canvas>
+    <div class="hud" id="hud-arriba"></div>
+    <div class="hud" id="hud-abajo-izq"></div>
+    <div class="hud" id="hud-abajo-der"></div>
+    <div class="hud" id="hud-reloj"></div>
+    <div class="hud" id="hud-proximos"></div>
+    <div id="barra-descarga"><div></div></div>
+    <div id="aviso-pase" hidden title="Tocá para cerrar"></div>
+    <div id="aviso-act" hidden></div>
+    <button id="b-mostrar-barra" title="Mostrar controles (tecla B)">▲</button>
+    <div id="aviso-carga"><div id="carga-caja"><div id="carga-texto">Cargando satélites…</div><div id="carga-barra"><div></div></div><div id="carga-detalle"></div></div></div>
+  </main>
+
+  <aside id="panel">
+    <button id="b-cerrar-panel" title="Cerrar">✕</button>
+    <div id="reloj">
+      <div id="reloj-hora">--:--:--</div>
+      <div id="reloj-fecha">--/--/----</div>
+      <div id="reloj-modo">EN VIVO</div>
+    </div>
+
+    <nav id="pestanas">
+      <button data-tab="ahora" class="activa">Ahora</button>
+      <button data-tab="proximos">Próximos</button>
+      <button data-tab="noches">Noches</button>
+      <button data-tab="radio">Radio</button>
+      <button data-tab="ajustes">Ajustes</button>
+    </nav>
+
+    <section id="tab-ahora" class="tab activa">
+      <div id="detalle" hidden></div>
+      <div id="lista-ahora" class="lista"></div>
+    </section>
+
+    <section id="tab-proximos" class="tab">
+      <details class="grupo-aj">
+        <summary>Filtros</summary>
+        <label class="check"><input type="checkbox" id="prox-sin-starlink"> Ocultar Starlink (los trenes recién lanzados se siguen mostrando)</label>
+      </details>
+      <div class="fila-opciones"><span id="prox-estado"></span></div>
+      <div id="prox-barra"><div></div></div>
+      <div id="lista-proximos" class="lista"></div>
+    </section>
+
+    <section id="tab-noches" class="tab">
+      <p class="nota">Pases visibles de las próximas 7 noches, teniendo en cuenta tu cielo y el pronóstico de nubes. Sin Starlink comunes (sí los trenes recién lanzados). Tocá una noche para ver sus mejores pases.</p>
+      <div id="noches-barra" class="barrita"><div></div></div>
+      <div id="lista-noches" class="lista"></div>
+    </section>
+
+    <section id="tab-radio" class="tab">
+      <details class="grupo-aj" id="rad-config">
+        <summary>Configuración del receptor</summary>
+        <details class="sub-aj" open>
+          <summary>Tu receptor</summary>
+          <label>Modelo <select id="rad-rango">
+            <option value="fc0013">RTL-SDR con FC0013 (22–1100 MHz)</option>
+            <option value="rtl">RTL-SDR R820T/R828D (24–1766 MHz)</option>
+            <option value="todo">Cualquier frecuencia</option>
+          </select></label>
+          <p class="nota">Solo se muestran los satélites que transmiten en frecuencias que tu receptor puede escuchar.</p>
+          <label class="check"><input type="checkbox" id="rad-radar"> Mostrar estos satélites en el radar (en celeste)</label>
+        </details>
+        <details class="sub-aj" id="rad-rig">
+          <summary>Mover la frecuencia del SDR sola</summary>
+          <p class="nota">La app le dice a tu programa de SDR qué frecuencia sintonizar y la va corrigiendo por el efecto Doppler mientras el satélite pasa.</p>
+          <ol class="pasos-txt">
+            <li><b>SDR++:</b> en el menú de la izquierda activá el módulo <i>Rigctl Server</i> y tocá <i>Start</i> (puerto 4532).</li>
+            <li><b>SDR#:</b> necesitás instalar un plugin de rigctl (no viene incluido).</li>
+            <li>Activá la casilla de abajo y tocá una frecuencia en la lista "En el cielo ahora".</li>
+          </ol>
+          <label class="check"><input type="checkbox" id="rad-rig-on"> Activar control del SDR</label>
+          <div class="dos">
+            <label>Host <input id="rad-host" type="text" autocomplete="off"></label>
+            <label>Puerto <input id="rad-puerto" type="number"></label>
+          </div>
+        </details>
+      </details>
+      <p id="rad-rig-estado" class="nota"></p>
+      <div class="titulo-lista">EN EL CIELO AHORA</div>
+      <div id="lista-radio" class="lista"></div>
+      <div class="titulo-lista">PRÓXIMOS PASES DE RADIO (3 H, MÁS DE 10°)</div>
+      <div id="lista-radio-prox" class="lista"></div>
+      <p class="nota">Frecuencias: base de datos SatNOGS (solo transmisores activos). La frecuencia en grande ya incluye el corrimiento Doppler; entre paréntesis va la nominal.</p>
+    </section>
+
+    <section id="tab-ajustes" class="tab">
+      <details class="grupo-aj" open>
+        <summary>Ubicación y cielo</summary>
+        <details class="sub-aj" open>
+          <summary>Tu ubicación</summary>
+          <label>Ciudad <select id="aj-ciudad"></select></label>
+          <div class="dos">
+            <label>Latitud <input id="aj-lat" type="number" step="0.0001"></label>
+            <label>Longitud <input id="aj-lon" type="number" step="0.0001"></label>
+          </div>
+          <button id="aj-aplicar-ubic" class="boton">Aplicar ubicación</button>
+        </details>
+        <details class="sub-aj">
+          <summary>Contaminación lumínica</summary>
+          <label>Tipo de cielo <select id="aj-cielo"></select></label>
+          <p id="aj-cielo-info" class="nota"></p>
+        </details>
+        <details class="sub-aj">
+          <summary>Nubes</summary>
+          <label class="check"><input type="checkbox" id="aj-nubes-on"> Tener en cuenta las nubes</label>
+          <label>Nubes <select id="aj-nubes">
+            <option value="auto">Automático (pronóstico Open-Meteo)</option>
+            <option value="finas">Nubes finas o bruma</option>
+            <option value="parcial">Parcialmente nublado</option>
+            <option value="nublado">Nublado</option>
+          </select></label>
+          <p id="aj-nubes-info" class="nota"></p>
+        </details>
+      </details>
+
+      <details class="grupo-aj">
+        <summary>Qué mostrar en el radar</summary>
+        <details class="sub-aj" open>
+          <summary>Satélites</summary>
+          <div class="dos">
+            <label>Elevación mínima <select id="aj-minel">
+              <option value="5">5°</option><option value="10">10°</option><option value="15">15°</option><option value="20">20°</option>
+            </select></label>
+            <label>Sol bajo horizonte <select id="aj-sol">
+              <option value="-6">−6° (civil)</option><option value="-9">−9°</option><option value="-12">−12° (náutico)</option>
+            </select></label>
+          </div>
+          <label>Máximo de "por hacerse visibles" (rojos) <select id="aj-maxpend">
+            <option value="0">Todos</option><option value="3">Los 3 más próximos</option><option value="5">Los 5 más próximos</option>
+            <option value="10">Los 10 más próximos</option><option value="20">Los 20 más próximos</option>
+          </select></label>
+          <label>Cuando deja de verse <select id="aj-terminar">
+            <option value="gris">Queda en gris tenue</option><option value="ocultar">Desaparece</option>
+          </select></label>
+          <label class="check"><input type="checkbox" id="aj-starlink"> Incluir Starlink</label>
+          <label class="check"><input type="checkbox" id="aj-nombres"> Nombres de los satélites</label>
+          <label class="check"><input type="checkbox" id="aj-guia"> Guía con estrellas en las listas ("aparece cerca de Sirio · pasa cerca de…")</label>
+        </details>
+        <details class="sub-aj">
+          <summary>Estrellas y planetas</summary>
+          <label class="check"><input type="checkbox" id="aj-planetas"> Planetas (Venus, Júpiter, Marte, Saturno, Mercurio)</label>
+          <label class="check"><input type="checkbox" id="aj-estrellas"> Estrellas brillantes (para orientarte)</label>
+          <div class="dos">
+            <label>Estrellas hasta <select id="aj-estrellas-mag">
+              <option value="1">mag 1 (unas 20)</option><option value="1.5">mag 1.5</option><option value="2">mag 2 (unas 50)</option>
+              <option value="2.5">mag 2.5</option><option value="3">mag 3 (unas 170)</option>
+            </select></label>
+            <label class="check abajo"><input type="checkbox" id="aj-estrellas-nombres"> Sus nombres</label>
+          </div>
+        </details>
+        <details class="sub-aj">
+          <summary>Orientación del radar</summary>
+          <label>Vista <select id="aj-vista">
+            <option value="mapa">Mapa (este a la derecha)</option>
+            <option value="cielo">Acostado mirando arriba (este a la izquierda)</option>
+          </select></label>
+          <p class="nota">"Acostado mirando arriba" es como ves el cielo de verdad si te acostás con la cabeza hacia el norte.</p>
+        </details>
+      </details>
+
+      <details class="grupo-aj">
+        <summary>Pantalla</summary>
+        <details class="sub-aj" open>
+          <summary>Colores y brillo</summary>
+          <label class="check"><input type="checkbox" id="aj-rojo"> Modo nocturno rojo (cuida la vista en la oscuridad)</label>
+          <label>Brillo de pantalla <input type="range" id="aj-brillo" min="25" max="100" step="5"></label>
+        </details>
+        <details class="sub-aj">
+          <summary>Tamaños y grosores</summary>
+          <label>Letra del radar <span id="aj-texto-v" class="valor"></span>
+            <input type="range" id="aj-texto" min="70" max="220" step="10"></label>
+          <label>Grosor de las líneas del radar <span id="aj-grosor-c-v" class="valor"></span>
+            <input type="range" id="aj-grosor-c" min="50" max="400" step="25"></label>
+          <label>Grosor de los trayectos <span id="aj-grosor-t-v" class="valor"></span>
+            <input type="range" id="aj-grosor-t" min="50" max="400" step="25"></label>
+          <label>Letra de la lista de próximos pases <span id="aj-texto-lista-v" class="valor"></span>
+            <input type="range" id="aj-texto-lista" min="80" max="260" step="10"></label>
+          <button id="aj-restablecer-vista" class="boton">Restablecer tamaños</button>
+        </details>
+        <details class="sub-aj">
+          <summary>Atajos de teclado</summary>
+          <p class="nota"><b>P</b>: ocultar o mostrar este panel (a la derecha aparece la lista de próximos pases).<br><b>B</b>: ocultar o mostrar la barra de abajo.<br><b>F11</b>: pantalla completa.</p>
+        </details>
+      </details>
+
+      <details class="grupo-aj">
+        <summary>Avisos y sonidos</summary>
+        <p class="nota">El botón ♪ de la barra de abajo silencia todo de una vez.</p>
+        <details class="sub-aj" open>
+          <summary>Aviso antes de cada pase</summary>
+          <label>Cuándo avisar <select id="aj-aviso">
+            <option value="0">No avisar</option><option value="1">1 minuto antes</option><option value="2">2 minutos antes</option>
+            <option value="5">5 minutos antes</option><option value="10">10 minutos antes</option>
+          </select></label>
+          <label class="check"><input type="checkbox" id="aj-aviso-cartel"> Mostrar el cartel en pantalla (nombre, brillo y por dónde pasa)</label>
+          <label class="check"><input type="checkbox" id="aj-son-aviso"> Con sonido (campanita)</label>
+          <p class="nota">Para que solo suene, sacá la tilde del cartel y dejá la del sonido.</p>
+          <label>Volumen <input type="range" id="aj-vol-aviso" min="0" max="100" step="5"></label>
+          <button id="aj-probar-aviso" class="boton">Probar</button>
+        </details>
+        <details class="sub-aj">
+          <summary>Al hacerse visible (rojo → amarillo)</summary>
+          <label class="check"><input type="checkbox" id="aj-son-visible"> Con sonido (ping)</label>
+          <label>Volumen <input type="range" id="aj-vol-visible" min="0" max="100" step="5"></label>
+          <button id="aj-probar-visible" class="boton">Probar</button>
+        </details>
+      </details>
+
+      <details class="grupo-aj">
+        <summary>Tus observaciones</summary>
+        <details class="sub-aj" open>
+          <summary>Resumen y ajuste</summary>
+          <p class="nota">Después de cada pase tocá ✓ si lo viste o ✗ si no. Con 5 o más, la app ajusta sola el brillo límite a tu cielo y tu vista.</p>
+          <p id="obs-resumen"></p>
+          <label class="check"><input type="checkbox" id="obs-usar"> Usar el ajuste aprendido</label>
+        </details>
+        <details class="sub-aj">
+          <summary>Historial</summary>
+          <div id="obs-lista" class="lista"></div>
+          <button id="obs-borrar" class="boton">Borrar observaciones</button>
+        </details>
+      </details>
+
+      <details class="grupo-aj desk">
+        <summary>Ver en el celular</summary>
+        <p class="nota"><b>¿Para qué sirve?</b> Para salir al patio con el radar en el celular en vez de ir y volver a la computadora. El celular muestra lo mismo que la PC.</p>
+        <label class="check"><input type="checkbox" id="srv-celular"> Activar</label>
+        <div id="cel-guia" hidden>
+          <div class="paso"><span class="num">1</span><div>Conectá el celular al <b>mismo WiFi</b> que esta computadora.</div></div>
+          <div class="paso"><span class="num">2</span><div>Abrí la <b>cámara</b> del celular y apuntá a este código. Tocá el enlace que aparece.
+            <img id="srv-qr" alt="Código QR" hidden></div></div>
+          <div class="paso"><span class="num">3</span><div>Si no tenés lector de QR, abrí Chrome en el celular y escribí esta dirección:
+            <div class="url-caja"><code id="cel-url">—</code><button id="cel-copiar" class="boton">Copiar</button></div>
+            <div id="srv-celular-info" class="nota"></div></div></div>
+          <div class="paso"><span class="num">4</span><div><b>Consejo:</b> en Chrome tocá los tres puntos ⋮ → <i>Agregar a la pantalla principal</i>. Así queda como una app más.</div></div>
+          <details class="sub-aj">
+            <summary>Si no abre en el celular</summary>
+            <ul class="pasos-txt">
+              <li>SatRadar tiene que estar <b>abierta</b> en la computadora (puede estar minimizada).</li>
+              <li>La primera vez, Windows pregunta si permitís el acceso a la red: elegí <b>Redes privadas</b> y <i>Permitir</i>. Si dijiste que no, buscá en Windows "Permitir una aplicación a través del Firewall" y tildá SatRadar.</li>
+              <li>Revisá que el celular no esté en la red de <b>invitados</b> ni usando datos móviles.</li>
+              <li>Probá con las otras direcciones que aparecen arriba, si hay.</li>
+            </ul>
+          </details>
+          <p class="nota">Desde el celular solo se puede mirar: no se cambia nada de la PC. Los ajustes de pantalla del celular (panel, letra, modo rojo) se guardan en el celular.</p>
+        </div>
+      </details>
+
+      <details class="grupo-aj desk">
+        <summary>Usar en OBS (para transmitir)</summary>
+        <p class="nota"><b>¿Para qué sirve?</b> Para mostrar el radar en vivo en tus streams de YouTube, Kick o TikTok. Sale con <b>fondo transparente</b>, así lo podés poner encima de tu cámara o de otra escena, como si fuera un sticker.</p>
+        <label class="check"><input type="checkbox" id="srv-obs"> Activar</label>
+        <div id="stream-guia" hidden>
+          <details class="sub-aj" open>
+            <summary>Qué mostrar en el stream</summary>
+            <label>Formato <select id="stream-formato">
+              <option value="horizontal">Horizontal, radar + lista (1600 × 1000)</option>
+              <option value="cuadrado">Solo el radar, cuadrado (1000 × 1000)</option>
+              <option value="vertical">Vertical para TikTok, radar arriba y lista abajo (1080 × 1920)</option>
+            </select></label>
+            <label class="check"><input type="checkbox" id="stream-lista"> Lista de próximos pases</label>
+            <label class="check"><input type="checkbox" id="stream-reloj"> Hora</label>
+            <label class="check"><input type="checkbox" id="stream-nombres"> Nombres de los satélites</label>
+            <label>Tamaño de letra <span id="stream-letra-v" class="valor"></span>
+              <input type="range" id="stream-letra" min="80" max="250" step="10"></label>
+            <button id="stream-ver" class="boton">Ver cómo queda</button>
+            <p class="nota">"Ver cómo queda" lo abre en tu navegador. Allí el fondo se ve negro; en OBS va a ser transparente.</p>
+          </details>
+          <details class="sub-aj" open>
+            <summary>Cómo agregarlo en OBS, paso a paso</summary>
+            <div class="paso"><span class="num">1</span><div><b>Copiá esta dirección</b> con el botón:
+              <div class="url-caja"><code id="stream-url">—</code><button id="stream-copiar" class="boton">Copiar</button></div></div></div>
+            <div class="paso"><span class="num">2</span><div>Abrí <b>OBS Studio</b> y elegí la escena donde lo querés. Abajo, en el cuadro <b>Fuentes</b>, tocá el botón <b>+</b>.</div></div>
+            <div class="paso"><span class="num">3</span><div>En la lista elegí <b>Navegador</b> (si tu OBS está en inglés: <i>Browser</i>). Ponele de nombre "SatRadar" y tocá <b>Aceptar</b>.</div></div>
+            <div class="paso"><span class="num">4</span><div>Se abre una ventana. En <b>URL</b> borrá lo que haya y pegá la dirección (<b>Ctrl + V</b>).</div></div>
+            <div class="paso"><span class="num">5</span><div>En <b>Ancho</b> poné <b id="stream-ancho">1600</b> y en <b>Alto</b> poné <b id="stream-alto">1000</b>. Tocá <b>Aceptar</b>.</div></div>
+            <div class="paso"><span class="num">6</span><div>El radar aparece en tu escena. <b>Arrastralo</b> para moverlo y tirá de las <b>esquinas rojas</b> para agrandarlo o achicarlo, como cualquier imagen.</div></div>
+          </details>
+          <details class="sub-aj">
+            <summary>Importante y problemas comunes</summary>
+            <ul class="pasos-txt">
+              <li>SatRadar tiene que estar <b>abierta</b> en la computadora mientras transmitís (puede estar minimizada).</li>
+              <li>Usa la ubicación y los ajustes de esta PC. Si cambiás algo acá, en OBS hacé <b>clic derecho</b> sobre la fuente SatRadar → <b>Actualizar</b> (<i>Refresh</i>).</li>
+              <li>En el stream no suenan los avisos ni aparecen carteles.</li>
+              <li><b>Se ve en blanco o dice que no se puede conectar:</b> revisá que SatRadar esté abierta y que "Activar" esté tildado, y después hacé clic derecho → Actualizar.</li>
+              <li><b>Se ve cortado:</b> revisá el Ancho y el Alto del paso 5.</li>
+              <li>Si cambiaste el formato o las opciones de arriba, volvé a copiar la dirección y pegala en la fuente de OBS (doble clic sobre la fuente para abrir sus propiedades).</li>
+            </ul>
+          </details>
+          <div id="srv-obs-info" class="nota"></div>
+        </div>
+      </details>
+
+      <details class="grupo-aj desk">
+        <summary>Conexión (avanzado)</summary>
+        <label>Puerto del servidor local <input id="srv-puerto" type="number" min="1024" max="65535"></label>
+        <p class="nota">Lo usan "Ver en el celular" y "Usar en OBS". Cambialo solo si otro programa ya usa el 8770. Si lo cambiás, volvé a copiar las direcciones.</p>
+      </details>
+
+      <details class="grupo-aj desk">
+        <summary>Actualizaciones</summary>
+        <p id="act-version" class="nota"></p>
+        <p class="nota">SatRadar se fija sola si hay una versión nueva cada vez que la abrís. Si hay, aparece un cartel arriba con el botón <b>Instalar ahora</b>: se descarga, se instala encima y tus ajustes se mantienen.</p>
+        <details class="sub-aj">
+          <summary>Avanzado</summary>
+          <label>Dirección de actualizaciones (dejala vacía para usar la oficial) <input id="act-url" type="text" placeholder="https://github.com/Chatran666/satradar/…/latest.json" autocomplete="off"></label>
+        </details>
+        <button id="act-buscar" class="boton">Buscar actualizaciones</button>
+        <p id="act-estado" class="nota"></p>
+      </details>
+
+      <details class="grupo-aj desk">
+        <summary>Datos y servicios</summary>
+        <details class="sub-aj" open>
+          <summary>Fuentes de datos</summary>
+          <p id="aj-datos" class="nota"></p>
+          <div id="aj-fuentes"></div>
+          <button id="aj-actualizar" class="boton">Actualizar ahora</button>
+          <p class="nota">Cada fuente se guarda en la PC y se actualiza sola. Sin internet se usa la copia. La app nunca pide los mismos datos más de una vez cada 2 horas.</p>
+        </details>
+        <details class="sub-aj">
+          <summary>Cuenta de Space-Track</summary>
+          <div id="st-desconectado">
+            <p class="nota">Opcional y gratis (space-track.org). Suma cientos de cohetes viejos, de lo más brillante que se ve. La contraseña se guarda cifrada en esta PC.</p>
+            <label>Usuario (email) <input id="st-usuario" type="text" autocomplete="off"></label>
+            <label>Contraseña <input id="st-clave" type="password" autocomplete="off"></label>
+            <button id="st-guardar" class="boton">Guardar y conectar</button>
+          </div>
+          <div id="st-conectado" hidden>
+            <p id="st-quien" class="nota"></p>
+            <button id="st-borrar" class="boton">Desconectar cuenta</button>
+          </div>
+          <p id="st-estado" class="nota"></p>
+        </details>
+      </details>
+    </section>
+  </aside>
+
+  <footer id="barra">
+    <div class="grupo">
+      <button data-salto="-3600000" title="1 hora atrás">−1h</button>
+      <button data-salto="-600000" title="10 minutos atrás">−10m</button>
+      <button id="b-pausa" title="Pausa">❚❚</button>
+      <button id="b-ahora" title="Volver a la hora real">AHORA</button>
+      <button data-salto="600000" title="10 minutos adelante">+10m</button>
+      <button data-salto="3600000" title="1 hora adelante">+1h</button>
+      <select id="b-velocidad" title="Velocidad">
+        <option value="1">x1</option><option value="10">x10</option>
+        <option value="60">x60</option><option value="300">x300</option>
+      </select>
+    </div>
+    <div class="grupo">
+ <button id="b-ocultar-barra" title="Ocultar esta barra (tecla B)">▼ Ocultar barra</button>
+      <button id="b-panel" title="Ocultar o mostrar el panel derecho (tecla P)">◧ Ocultar panel</button>
+      <button id="b-sonido" title="Sonido">♪ Sonido</button>
+      <button id="b-rojo" title="Modo nocturno rojo">● Modo rojo</button>
+      <button id="b-pantalla" title="Pantalla completa (F11)">⛶</button>
+    </div>
+  </footer>
+</div>
+<script src="cielo.js"></script>
+<script src="estrellas.js"></script>
+<script src="planetas.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

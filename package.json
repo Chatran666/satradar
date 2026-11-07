@@ -1,0 +1,50 @@
+{
+  "name": "satradar",
+  "productName": "SatRadar",
+  "version": "2.0.1",
+  "description": "Radar de satélites visibles a ojo desnudo",
+  "main": "main.js",
+  "author": "Mariano",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "electron": "33.2.1",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "com.mariano.satradar",
+    "productName": "SatRadar",
+    "copyright": "Mariano",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app/icono.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SatRadar",
+      "artifactName": "SatRadar-Setup-${version}.exe",
+      "installerIcon": "app/icono.ico",
+      "uninstallerIcon": "app/icono.ico",
+      "language": "3082",
+      "deleteAppDataOnUninstall": false
+    },
+    "directories": {
+      "output": "/home/claude/dist/instalador"
+    }
+  }
+}
