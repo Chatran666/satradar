@@ -1,9 +1,11 @@
-# Al subir una etiqueta vX.Y.Z, GitHub arma el instalador en Windows y lo publica en Releases
-# junto con latest.json (que la app consulta para saber si hay versión nueva).
+# Cuando cambia la versión en package.json (rama main), GitHub arma el instalador en Windows
+# y lo publica en Releases junto con latest.json (que la app consulta para saber si hay versión nueva).
 name: Publicar versión
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['package.json', '.github/workflows/publicar.yml']
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -14,12 +16,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Versión desde la etiqueta
+      - name: Versión desde package.json
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "VERSION=$V" >> $GITHUB_ENV
+          if gh release view "v$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "YA_EXISTE=1" >> $GITHUB_ENV
+            echo "La versión v$V ya está publicada; no hay nada que hacer."
+          fi
       - name: Dependencias
+        if: env.YA_EXISTE != '1'
         run: npm ci --no-audit --no-fund
       - name: Armar la app
+        if: env.YA_EXISTE != '1'
         shell: bash
         run: >
           npx electron-packager . SatRadar --platform=win32 --arch=x64 --electron-version=33.2.1
@@ -28,8 +40,10 @@ jobs:
           --ignore="^/app/datos-prueba" --ignore="^/build" --ignore="^/dist" --ignore="^/\.github"
           --ignore="^/node_modules/(electron-builder|app-builder|@electron/packager|dmg|7zip)"
       - name: Instalar NSIS
+        if: env.YA_EXISTE != '1'
         run: choco install nsis -y --no-progress
       - name: Armar el instalador
+        if: env.YA_EXISTE != '1'
         shell: pwsh
         run: |
           & "C:\Program Files (x86)\NSIS\makensis.exe" /V2 "/DVERSION=$env:VERSION" build\instalador.nsi
@@ -38,8 +52,11 @@ jobs:
           @{ version = $env:VERSION; url = "https://github.com/$repo/releases/download/v$env:VERSION/SatRadar-Setup-$env:VERSION.exe"; notas = "" } |
             ConvertTo-Json | Set-Content -Encoding utf8 dist\latest.json
       - name: Publicar
+        if: env.YA_EXISTE != '1'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
           name: SatRadar ${{ env.VERSION }}
           files: |
             dist/SatRadar-Setup-${{ env.VERSION }}.exe
