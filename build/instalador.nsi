@@ -50,7 +50,7 @@ Section "SatRadar" Principal
   SetOutPath "$INSTDIR"
   RMDir /r "$INSTDIR\resources"
   RMDir /r "$INSTDIR\locales"
-  File /r "${ORIGEN}/*.*"
+  File /r "${ORIGEN}\*.*"
   WriteUninstaller "$INSTDIR\Desinstalar SatRadar.exe"
   CreateShortcut "$DESKTOP\SatRadar.lnk" "$INSTDIR\SatRadar.exe"
   CreateShortcut "$SMPROGRAMS\SatRadar.lnk" "$INSTDIR\SatRadar.exe"
