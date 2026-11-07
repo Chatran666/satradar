@@ -46,7 +46,8 @@ jobs:
         if: env.YA_EXISTE != '1'
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\NSIS\makensis.exe" /V2 "/DVERSION=$env:VERSION" build\instalador.nsi
+          $raiz = (Get-Location).Path
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /V2 "/DVERSION=$env:VERSION" "/DORIGEN=$raiz\dist\SatRadar-win32-x64" "/DSALIDA=$raiz\dist\SatRadar-Setup-$env:VERSION.exe" "/DICONO=$raiz\app\icono.ico" build\instalador.nsi
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $repo = "${{ github.repository }}"
           @{ version = $env:VERSION; url = "https://github.com/$repo/releases/download/v$env:VERSION/SatRadar-Setup-$env:VERSION.exe"; notas = "" } |
