@@ -1004,6 +1004,8 @@
       const espacio = geo.w / 2 - geo.R - (12 + 9 * ft()) - 28;
       if ((!aj.panelOculto && !modoObs) || !estado || espacio < 170) { el.innerHTML = ''; return; }
       el.style.width = Math.min(espacio, 300 * (aj.textoLista / 100) + 60) + 'px';
+      // Termina antes del texto de abajo a la derecha ("Órbitas: hace…")
+      el.style.bottom = Math.round(30 + 12 * ft()) + 'px';
     }
     const t = estado.t;
     const filas = [];
@@ -1037,6 +1039,11 @@
       html += `<div class="pp ${f.clase}"><div class="l1"><span class="cuenta">${f.izq}</span><span class="mag">mag ${f.mag.toFixed(1)}</span><span class="nom">${esc(f.nombre)}</span></div><div class="sub">${esc(f.sub)}</div>${f.guia ? `<div class="sub guia">${esc(f.guia)}</div>` : ''}</div>`;
     }
     el.innerHTML = html;
+    // Si no entra todo, se sacan filas enteras del final (nunca queda una cortada a la mitad)
+    if (!geo.vertical) {
+      const filasPP = el.querySelectorAll('.pp');
+      for (let i = filasPP.length - 1; i > 0 && el.scrollHeight > el.clientHeight + 1; i--) filasPP[i].remove();
+    }
   }
 
   function actualizarProximos() {

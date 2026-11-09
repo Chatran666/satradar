@@ -40,7 +40,7 @@ html, body {
   height: 100vh;
   transition: filter .2s;
 }
-#zona-radar { position: relative; min-width: 0; min-height: 0; }
+#zona-radar { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #radar { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
 .hud { position: absolute; font: var(--hud-px, 12px)/1.45 Consolas, "Cascadia Mono", monospace; pointer-events: none; white-space: pre; }
 #hud-arriba { top: 10px; left: 12px; }
@@ -305,3 +305,5 @@ body.obs.sin-reloj #hud-reloj { display: none !important; }
   #hud-proximos .l1 .cuenta { min-width: 5.2em; }
   #hud-proximos .l1 .mag { min-width: 4.2em; }
 }
+
+#hud-proximos:not(.abajo) { overflow: hidden; }
