@@ -11,7 +11,7 @@ const TIPOS = {
   '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
 };
 
-function crearServidor({ dirApp, obtenerDatos, leerAjustes, obtenerClima }) {
+function crearServidor({ dirApp, obtenerDatos, leerAjustes, obtenerClima, fotos }) {
   let srv = null;
   let actual = { puerto: 0, red: false };
   let cacheDatos = { firma: '', gz: null };
@@ -47,6 +47,23 @@ function crearServidor({ dirApp, obtenerDatos, leerAjustes, obtenerClima }) {
         const lat = parseFloat(url.searchParams.get('lat')), lon = parseFloat(url.searchParams.get('lon'));
         if (isNaN(lat) || isNaN(lon)) return responder(res, 400, 'text/plain', 'lat/lon');
         return responder(res, 200, 'application/json', JSON.stringify(await obtenerClima(lat, lon)));
+      }
+      if (p === '/api/fotos' && fotos) {
+        const q = url.searchParams;
+        const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon')), dias = parseInt(q.get('dias'), 10) || 30;
+        if (isNaN(lat) || isNaN(lon)) return responder(res, 400, 'text/plain', 'lat/lon');
+        try { return responder(res, 200, 'application/json', JSON.stringify({ lista: await fotos().buscar(lat, lon, Math.min(120, dias)) })); }
+        catch (e) { return responder(res, 200, 'application/json', JSON.stringify({ error: e.message })); }
+      }
+      if (p === '/api/foto' && fotos) {
+        const q = url.searchParams;
+        const item = { id: q.get('id') || '', coleccion: q.get('col') || '' };
+        const n = (k, d) => (isNaN(parseFloat(q.get(k))) ? d : parseFloat(q.get(k)));
+        if (!/^[\w.-]+$/.test(item.id)) return responder(res, 400, 'text/plain', 'id');
+        try {
+          const buf = await fotos().imagen(item, n('lat', 0), n('lon', 0), Math.min(50, n('km', 3)), Math.min(2048, n('w', 320)), Math.min(2048, n('h', 240)));
+          return responder(res, 200, 'image/jpeg', buf, { 'Cache-Control': 'max-age=86400' });
+        } catch (e) { return responder(res, 502, 'text/plain', 'No se pudo obtener la imagen'); }
       }
       // Archivos de la app (sin salir de la carpeta)
       const rel = p === '/' ? 'index.html' : p.replace(/^\/+/, '');

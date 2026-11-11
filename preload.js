@@ -19,5 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   alProgresoActualizacion: (fn) => ipcRenderer.on('act:progreso', (_e, v) => fn(v)),
   version: () => ipcRenderer.invoke('app:version'),
   copiar: (txt) => ipcRenderer.invoke('portapapeles', txt),
+  fotos: (lat, lon, dias) => ipcRenderer.invoke('fotos:buscar', lat, lon, dias),
+  fotoImagen: (item, lat, lon, km, ancho, alto) => ipcRenderer.invoke('fotos:imagen', item, lat, lon, km, ancho, alto),
   abrirLocal: (url) => ipcRenderer.invoke('abrir:local', url),
 });

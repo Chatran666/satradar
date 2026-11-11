@@ -37,6 +37,7 @@
       <button data-tab="proximos">Próximos</button>
       <button data-tab="noches">Noches</button>
       <button data-tab="radio">Radio</button>
+      <button data-tab="fotos">Fotos</button>
       <button data-tab="ajustes">Ajustes</button>
     </nav>
 
@@ -95,6 +96,22 @@
       <div class="titulo-lista">PRÓXIMOS PASES DE RADIO (3 H, MÁS DE 10°)</div>
       <div id="lista-radio-prox" class="lista"></div>
       <p class="nota">Frecuencias: base de datos SatNOGS (solo transmisores activos). La frecuencia en grande ya incluye el corrimiento Doppler; entre paréntesis va la nominal.</p>
+    </section>
+
+    <section id="tab-fotos" class="tab">
+      <div id="fotos-proximo" class="fotos-proximo"></div>
+      <details class="grupo-aj">
+        <summary>Filtros</summary>
+        <label>Período <select id="fotos-dias">
+          <option value="15">Últimos 15 días</option><option value="30">Últimos 30 días</option>
+          <option value="60">Últimos 60 días</option><option value="90">Últimos 90 días</option>
+        </select></label>
+        <label class="check"><input type="checkbox" id="fotos-despejadas"> Solo las despejadas sobre tu ubicación</label>
+        <p class="nota">Las fotos son de satélites de observación de la Tierra que pasan de día (cerca de las 10:40) cada 2 a 5 días. Cada píxel son 10 m (Sentinel-2) o 30 m (Landsat): se ven calles, manzanas y campos, no personas.</p>
+      </details>
+      <div id="fotos-estado" class="nota"></div>
+      <div id="lista-fotos"></div>
+      <p class="nota creditos">Imágenes: Copernicus Sentinel-2 (ESA) y Landsat (USGS/NASA), vía Microsoft Planetary Computer. Idea y método de pases basados en <i>Watched</i>, de Armaan Gupta (licencia MIT).</p>
     </section>
 
     <section id="tab-ajustes" class="tab">
@@ -311,6 +328,17 @@
         <p class="nota">Lo usan "Ver en el celular" y "Usar en OBS". Cambialo solo si otro programa ya usa el 8770. Si lo cambiás, volvé a copiar las direcciones.</p>
       </details>
 
+      <details class="grupo-aj">
+        <summary>Acerca de y créditos</summary>
+        <p class="nota">SatRadar, de Mariano. Código: github.com/Chatran666/satradar</p>
+        <ul class="pasos-txt">
+          <li>Órbitas: CelesTrak y Space-Track. Brillo: McCants y GCAT (J. McDowell). Radio: SatNOGS. Nubes: Open-Meteo.</li>
+          <li>Estrellas: catálogo Hipparcos vía d3-celestial (O. Frohn, BSD-3). Cálculo de órbitas: satellite.js (MIT).</li>
+          <li>Fotos: contienen datos modificados de Copernicus Sentinel-2 (ESA) y Landsat (USGS/NASA), vía Microsoft Planetary Computer.</li>
+          <li>La búsqueda exacta de pases y la idea de las fotos se basan en <i>Watched</i>, de Armaan Gupta (licencia MIT).</li>
+        </ul>
+      </details>
+
       <details class="grupo-aj desk">
         <summary>Actualizaciones</summary>
         <p id="act-version" class="nota"></p>
@@ -371,6 +399,18 @@
       <button id="b-pantalla" title="Pantalla completa (F11)">⛶</button>
     </div>
   </footer>
+</div>
+<div id="visor" hidden>
+  <div id="visor-marco"><img id="visor-img" alt="Foto del satélite"><div id="visor-marca"></div><div id="visor-cargando">Cargando foto…</div></div>
+  <div id="visor-pie">
+    <div id="visor-info"></div>
+    <div class="visor-botones">
+      <button id="visor-lejos" title="Ver más zona">− Alejar</button>
+      <button id="visor-cerca" title="Ver más de cerca">+ Acercar</button>
+      <button id="visor-guardar">Guardar</button>
+      <button id="visor-cerrar">Cerrar ✕</button>
+    </div>
+  </div>
 </div>
 <script src="cielo.js"></script>
 <script src="estrellas.js"></script>

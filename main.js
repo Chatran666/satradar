@@ -1,5 +1,5 @@
 // Proceso principal: ventana, descarga de datos (ver fuentes.js) y copia local.
-const { app, BrowserWindow, ipcMain, net, Menu, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, net, Menu, shell, clipboard, nativeImage } = require('electron');
 const tcp = require('net');
 const os = require('os');
 const path = require('path');
@@ -89,6 +89,29 @@ async function obtenerClima(lat, lon) {
   }
 }
 
+// ---------- Fotos reales de satélites ----------
+const { crearFotos } = require('./fotos');
+let fotosMod = null;
+function fotos() {
+  if (!fotosMod) {
+    fotosMod = crearFotos({
+      dir: path.join(app.getPath('userData'), 'fotos'),
+      fetch: (url, op) => net.fetch(url, op),
+      imagenDesdePng: (buf) => nativeImage.createFromBuffer(buf).toBitmap(),
+    });
+  }
+  return fotosMod;
+}
+ipcMain.handle('fotos:buscar', async (_e, lat, lon, dias) => {
+  try { return { lista: await fotos().buscar(+lat, +lon, +dias || 30) }; } catch (err) { return { error: err.message }; }
+});
+ipcMain.handle('fotos:imagen', async (_e, item, lat, lon, km, ancho, alto) => {
+  try {
+    const buf = await fotos().imagen(item, +lat, +lon, +km, Math.min(2048, +ancho), Math.min(2048, +alto));
+    return 'data:image/jpeg;base64,' + buf.toString('base64');
+  } catch (err) { return { error: err.message }; }
+});
+
 // ---------- Servidor para el celular y OBS ----------
 const { crearServidor } = require('./servidor');
 const servidor = crearServidor({
@@ -96,6 +119,7 @@ const servidor = crearServidor({
   obtenerDatos: () => getGestor().combinar(),
   leerAjustes: () => leerJson(path.join(app.getPath('userData'), 'ajustes.json')),
   obtenerClima,
+  fotos: () => fotos(),
 });
 async function configurarServidor(a) {
   a = a || {};

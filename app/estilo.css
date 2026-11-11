@@ -307,3 +307,31 @@ body.obs.sin-reloj #hud-reloj { display: none !important; }
 }
 
 #hud-proximos:not(.abajo) { overflow: hidden; }
+
+/* ---------- 2.1: Fotos ---------- */
+#pestanas button { font-size: 11.5px; padding: 9px 0; }
+.fotos-proximo { border: 1px solid var(--linea-fuerte); border-radius: 4px; padding: 8px 10px; margin: 4px 0 6px; font-size: 12.5px; }
+.fotos-proximo b { color: var(--acento); }
+.fotos-proximo .sig { font-size: 11.5px; color: var(--texto-tenue); margin-top: 3px; }
+.foto { border: 1px solid var(--linea); border-radius: 5px; margin-bottom: 10px; overflow: hidden; cursor: pointer; background: var(--boton); }
+.foto:hover { border-color: var(--acento); }
+.foto .mini { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #050505; }
+.foto .mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto .mini .punto-yo { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #ffd400; border-radius: 50%; box-shadow: 0 0 0 1px #000; }
+.foto .mini .cargando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--texto-tenue); }
+.foto .datos { padding: 6px 8px 8px; font-size: 12px; }
+.foto .datos .t1 { display: flex; justify-content: space-between; font-weight: 600; }
+.foto .datos .sub { color: var(--texto-tenue); font-size: 11.5px; margin-top: 2px; }
+.nube-ok { color: var(--acento); } .nube-media { color: #d6a400; } .nube-mal { color: var(--pendiente); }
+.creditos { margin-top: 10px; }
+#visor { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.94); display: flex; flex-direction: column; }
+#visor[hidden] { display: none; }
+#visor-marco { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#visor-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#visor-marca { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px solid #ffd400; border-radius: 50%; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+#visor-cargando { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #aaa; background: rgba(0,0,0,.7); padding: 3px 10px; border-radius: 10px; }
+#visor-pie { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid var(--linea); color: var(--texto); font-size: 13px; }
+#visor-info b { color: var(--acento); }
+.visor-botones { display: flex; gap: 6px; flex-wrap: wrap; }
+.visor-botones button { background: var(--boton); color: var(--texto); border: 1px solid var(--linea-fuerte); border-radius: 3px; padding: 6px 10px; cursor: pointer; font: 12.5px "Segoe UI", sans-serif; }
+.visor-botones button:hover { border-color: var(--acento); }

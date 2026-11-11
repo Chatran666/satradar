@@ -18,7 +18,7 @@
     vista: 'mapa', planetas: true, observaciones: [], usarAprendido: true,
     radRango: 'fc0013', radRadar: false, rigOn: false, rigHost: '127.0.0.1', rigPuerto: 4532,
     servCelular: false, servObs: false, servPuerto: 8770, actUrl: '',
-    avisoCartel: true, mostrarGuia: true,
+    avisoCartel: true, mostrarGuia: true, fotosDias: 30, fotosDespejadas: false,
     streamFormato: 'horizontal', streamLista: true, streamReloj: true, streamNombres: true, streamLetra: 120,
   };
   let aj = { ...DEFECTO };
@@ -103,12 +103,19 @@
     } else if (m.tipo === 'progreso-noches') {
       $('noches-barra').firstElementChild.style.width = Math.round(m.valor * 100) + '%';
       if (!noches) $('lista-noches').innerHTML = `<div class="vacio">Calculando las próximas 7 noches… ${Math.round(m.valor * 100)}%</div>`;
+    } else if (m.tipo === 'posiciones') {
+      const r = pedidosPos.get(m.pedido);
+      if (r) { pedidosPos.delete(m.pedido); r(m.res); }
+    } else if (m.tipo === 'pases-fotos') {
+      pasesFotosLista = m.lista;
+      actualizarProximoFoto();
     } else if (m.tipo === 'radio-proximos') {
       radioProx = m;
       actualizarRadioProx();
     } else if (m.tipo === 'progreso-carga') {
       carga(null, 0.75 + m.valor * 0.23, 'Calculando órbitas · ' + Math.round(m.valor * 100) + '%');
     } else if (m.tipo === 'cargado') {
+      setTimeout(() => { if (tabActiva === 'fotos') { pedirPasesFotos(); cargarFotos(false); } }, 500);
       carga(null, 1, 'Listo');
       cargado = true;
       $('aviso-carga').style.display = 'none';
@@ -798,6 +805,9 @@
     d.querySelector('.cerrar').onclick = () => { seleccion = null; actualizarListaAhora(); dibujar(); };
   }
 
+  function horaSeg(t) {
+    return new Date(t).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
   function hora(t) {
     return new Date(t).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
   }
@@ -950,7 +960,7 @@
   function avisar(p, falta) {
     const min = Math.max(1, Math.round(falta / 60000));
     const titulo = `${p.nombre} en ${min} min · mag ${p.mag.toFixed(1)}`;
-    const cuerpo = `${hora(p.ini)} · por el ${puntoCardinal(p.azIni)}, sube hasta ${Math.round(p.maxEl)}°` + (aj.mostrarGuia ? ` · ${guia(p)}` : '');
+    const cuerpo = `${horaSeg(p.ini)} · por el ${puntoCardinal(p.azIni)}, sube hasta ${Math.round(p.maxEl)}°` + (aj.mostrarGuia ? ` · ${guia(p)}` : '');
     campana();
     if (!aj.avisoCartel) return; // solo sonido
     const el = $('aviso-pase');
@@ -1026,7 +1036,7 @@
       const futuros = proximos.lista.filter((p) => p.ini > t && !(finPorId.has(p.id) && p.ini <= finPorId.get(p.id)));
       for (const p of agrupar(filtrarStarlink(futuros))) {
         filas.push({ clase: 'prox' + (p.tren ? ' tren' : ''), orden: p.ini, izq: 'en ' + cuentaRegresiva(p.ini - t), mag: p.mag, nombre: p.nombre,
-          sub: `${hora(p.ini)} · ${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)} · hasta ${Math.round(p.maxEl)}°`, guia: aj.mostrarGuia ? guia(p) : '' });
+          sub: `${horaSeg(p.ini)} · ${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)} · hasta ${Math.round(p.maxEl)}°`, guia: aj.mostrarGuia ? guia(p) : '' });
       }
     }
     filas.sort((a, b) => a.orden - b.orden);
@@ -1060,7 +1070,7 @@
     cont.innerHTML = lista.slice(0, 400).map((p) =>
       `<div class="fila" data-ini="${p.ini}" title="Tocá para ir a ese momento">
         <span class="punto${p.tren ? ' tren' : ''}" style="background:${C.visible}"></span>
-        <span class="nombre">${hora(p.ini)}  ${esc(p.nombre)}</span><span class="der">mag ${p.mag.toFixed(1)}</span>
+        <span class="nombre">${horaSeg(p.ini)}  ${esc(p.nombre)}</span><span class="der">mag ${p.mag.toFixed(1)}</span>
         <span class="sub">${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)} · máx ${fmtGrado(p.maxEl)} · ${duracion(Math.max(1, Math.round((p.fin - p.ini) / 60000)))}</span>
         ${aj.mostrarGuia ? `<span class="sub guia">${esc(guia(p))}</span>` : ''}
       </div>`).join('');
@@ -1271,6 +1281,153 @@
   if (window.api && window.api.alProgresoActualizacion) window.api.alProgresoActualizacion((v) => { const e = $('act-pct'); if (e) e.textContent = Math.round(v * 100) + '%'; });
   $('act-buscar').onclick = () => buscarActualizacion(false);
 
+  // ---------- Fotos reales de satélites ----------
+  let fotosLista = null, fotosClave = '', fotosCargando = false;
+  let pasesFotosLista = null, ultimoPedidoPasesFotos = 0;
+  const pedidosPos = new Map();
+  let nPedido = 0;
+  function posicionesDe(consultas) {
+    return new Promise((res) => {
+      const pedido = ++nPedido;
+      pedidosPos.set(pedido, res);
+      motor.postMessage({ tipo: 'posiciones', pedido, consultas });
+      setTimeout(() => { if (pedidosPos.has(pedido)) { pedidosPos.delete(pedido); res(consultas.map(() => null)); } }, 8000);
+    });
+  }
+  const fechaCorta = (t) => new Date(t).toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  function claseNube(v) { return v == null ? '' : v <= 10 ? 'nube-ok' : v <= 50 ? 'nube-media' : 'nube-mal'; }
+  function textoNubes(f) {
+    if (f.nubesLocal != null) return `<span class="${claseNube(f.nubesLocal)}">nubes sobre tu zona: ${f.nubesLocal}%</span>`;
+    if (f.nubesEscena != null) return `<span class="${claseNube(f.nubesEscena)}">nubes en la imagen: ${Math.round(f.nubesEscena)}%</span>`;
+    return '';
+  }
+  function cuandoFalta(ms) {
+    const h = ms / 3600000;
+    if (h < 1) return 'en ' + Math.max(1, Math.round(ms / 60000)) + ' min';
+    if (h < 36) return 'en ' + Math.round(h) + ' h';
+    return 'en ' + Math.round(h / 24) + ' días';
+  }
+  function actualizarProximoFoto() {
+    const el = $('fotos-proximo');
+    if (!pasesFotosLista) { el.innerHTML = 'Calculando cuándo pasa el próximo satélite de fotos…'; return; }
+    const ahora = estado ? estado.t : Date.now();
+    const futuros = pasesFotosLista.filter((p) => p.fin > ahora);
+    if (!futuros.length) { el.innerHTML = 'Ningún satélite de fotos pasa sobre tu ubicación en los próximos 8 días.'; return; }
+    const p = futuros[0];
+    el.innerHTML = `Próximo satélite de fotos sobre tu casa:<br><b>${esc(p.nombre)}</b> · ${fechaCorta(p.tMax)} ${horaSeg(p.tMax)} (${cuandoFalta(p.tMax - ahora)}) · casi encima, a ${Math.round(p.maxEl)}°` +
+      (futuros.length > 1 ? `<div class="sig">Después: ${futuros.slice(1, 4).map((x) => `${esc(x.nombre)} ${fechaCorta(x.tMax)} ${hora(x.tMax)}`).join(' · ')}</div>` : '');
+  }
+  function pedirPasesFotos() {
+    if (!cargado || (pasesFotosLista && Date.now() - ultimoPedidoPasesFotos < 3600000)) return;
+    ultimoPedidoPasesFotos = Date.now();
+    motor.postMessage({ tipo: 'pases-fotos', t: Date.now(), dias: 8 });
+  }
+  async function cargarFotos(forzar) {
+    const clave = [(+aj.lat).toFixed(3), (+aj.lon).toFixed(3), aj.fotosDias].join('|');
+    if (!forzar && (fotosCargando || fotosClave === clave)) { mostrarFotos(); return; }
+    if (!window.api || !window.api.fotos) {
+      $('fotos-estado').textContent = 'Las fotos se buscan desde la app de Windows (o desde el celular conectado a ella).';
+      return;
+    }
+    fotosCargando = true;
+    $('fotos-estado').textContent = 'Buscando fotos de tu ubicación en los archivos de la ESA y la NASA…';
+    $('lista-fotos').innerHTML = '';
+    const r = await window.api.fotos(+aj.lat, +aj.lon, +aj.fotosDias);
+    fotosCargando = false;
+    if (r.error) { $('fotos-estado').textContent = 'No se pudieron buscar las fotos: ' + r.error + '. Revisá la conexión a internet.'; return; }
+    fotosLista = r.lista || [];
+    fotosClave = clave;
+    // Datos del pase que sacó cada foto
+    const pos = await posicionesDe(fotosLista.map((f) => ({ norad: f.norad, t: f.fecha })));
+    fotosLista.forEach((f, i) => (f.pase = pos[i]));
+    mostrarFotos();
+  }
+  function fotosVisibles() {
+    return (fotosLista || []).filter((f) => !aj.fotosDespejadas || (f.nubesLocal != null ? f.nubesLocal <= 20 : (f.nubesEscena ?? 100) <= 20));
+  }
+  function mostrarFotos() {
+    if (!fotosLista) return;
+    const lista = fotosVisibles();
+    $('fotos-estado').textContent = fotosLista.length
+      ? `${fotosLista.length} fotos de tu ubicación en los últimos ${aj.fotosDias} días${lista.length < fotosLista.length ? ` (${lista.length} despejadas)` : ''}. Tocá una para verla grande.`
+      : `No hay fotos de tu ubicación en los últimos ${aj.fotosDias} días.`;
+    $('lista-fotos').innerHTML = lista.map((f, i) => {
+      const pase = f.pase ? `Pasó a las ${horaSeg(f.pase.t)} a ${Math.round(f.pase.alt)} km de altura, ${f.pase.el > 75 ? 'casi encima tuyo' : 'al ' + puntoCardinal(f.pase.az)} (${Math.round(f.pase.el)}°)` : '';
+      return `<div class="foto" data-i="${fotosLista.indexOf(f)}">
+        <div class="mini"><div class="cargando">Cargando…</div><img alt="" data-foto="${fotosLista.indexOf(f)}"><span class="punto-yo"></span></div>
+        <div class="datos"><div class="t1"><span>${esc(f.nombre)}</span><span>${fechaCorta(f.pase ? f.pase.t : f.fecha)} ${hora(f.pase ? f.pase.t : f.fecha)}</span></div>
+        <div class="sub">${textoNubes(f)}</div>${pase ? `<div class="sub">${esc(pase)}</div>` : ''}</div></div>`;
+    }).join('');
+    cargarMiniaturas();
+  }
+  let colaMini = [];
+  async function cargarMiniaturas() {
+    colaMini = [...document.querySelectorAll('#lista-fotos img[data-foto]')];
+    const trabajador = async () => {
+      while (colaMini.length) {
+        const img = colaMini.shift();
+        const f = fotosLista[+img.dataset.foto];
+        if (!f || !img.isConnected) continue;
+        const src = await fuenteFoto(f, 2.5, 400, 300);
+        if (!img.isConnected) continue;
+        if (src) { img.src = src; img.onload = () => { const c = img.parentElement.querySelector('.cargando'); if (c) c.remove(); }; }
+        else { const c = img.parentElement.querySelector('.cargando'); if (c) c.textContent = 'Sin imagen'; }
+      }
+    };
+    await Promise.all([trabajador(), trabajador(), trabajador()]);
+  }
+  async function fuenteFoto(f, km, w, h) {
+    try {
+      const item = { id: f.id, coleccion: f.coleccion };
+      if (modoWeb) return `/api/foto?id=${encodeURIComponent(f.id)}&col=${encodeURIComponent(f.coleccion)}&lat=${aj.lat}&lon=${aj.lon}&km=${km}&w=${w}&h=${h}`;
+      const r = await window.api.fotoImagen(item, +aj.lat, +aj.lon, km, w, h);
+      return typeof r === 'string' ? r : null;
+    } catch { return null; }
+  }
+  // Visor a pantalla completa
+  const ZOOMS = [0.75, 1.5, 3, 6, 12, 25];
+  let visor = { f: null, z: 2 };
+  async function abrirVisor(f) {
+    visor = { f, z: visor.f ? visor.z : 2 };
+    $('visor').hidden = false;
+    const t = f.pase ? f.pase.t : f.fecha;
+    const pase = f.pase ? ` · pasó a ${Math.round(f.pase.alt)} km de altura, ${f.pase.el > 75 ? 'casi encima tuyo' : 'al ' + puntoCardinal(f.pase.az)} (${Math.round(f.pase.el)}°)` : '';
+    $('visor-info').innerHTML = `<b>${esc(f.nombre)}</b> · ${fechaCorta(t)} ${horaSeg(t)}${pase}<br>${textoNubes(f)} · el círculo amarillo es tu ubicación`;
+    await cargarVisor();
+  }
+  async function cargarVisor() {
+    const f = visor.f;
+    const km = ZOOMS[visor.z];
+    $('visor-cargando').hidden = false;
+    $('visor-cargando').textContent = `Cargando foto (${(km * 2).toLocaleString('es-AR')} km de ancho)…`;
+    const ancho = Math.min(1600, Math.round(window.innerWidth * (window.devicePixelRatio || 1)));
+    const alto = Math.round(ancho * 0.75);
+    const src = await fuenteFoto(f, km, ancho, alto);
+    if (visor.f !== f || ZOOMS[visor.z] !== km) return;
+    if (!src) { $('visor-cargando').textContent = 'No se pudo cargar la foto.'; return; }
+    const img = $('visor-img');
+    img.onload = () => ($('visor-cargando').hidden = true);
+    img.src = src;
+    $('visor-cerca').disabled = visor.z === 0;
+    $('visor-lejos').disabled = visor.z === ZOOMS.length - 1;
+  }
+  $('visor-cerca').onclick = () => { if (visor.z > 0) { visor.z--; cargarVisor(); } };
+  $('visor-lejos').onclick = () => { if (visor.z < ZOOMS.length - 1) { visor.z++; cargarVisor(); } };
+  $('visor-cerrar').onclick = () => { $('visor').hidden = true; };
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('visor').hidden) $('visor').hidden = true; });
+  $('visor-guardar').onclick = () => {
+    const src = $('visor-img').src;
+    if (!src || !visor.f) return;
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = `SatRadar ${visor.f.nombre} ${new Date(visor.f.fecha).toISOString().slice(0, 10)}.jpg`;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  $('lista-fotos').addEventListener('click', (e) => {
+    const c = e.target.closest('.foto');
+    if (c && fotosLista) abrirVisor(fotosLista[+c.dataset.i]);
+  });
+
   // ---------- Interacción ----------
   canvas.addEventListener('click', (e) => {
     if (!estado) return;
@@ -1310,6 +1467,7 @@
     document.querySelectorAll('.tab').forEach((s) => s.classList.toggle('activa', s.id === 'tab-' + n));
     if (n === 'radio') { pedirRadioProx(); actualizarRadio(); actualizarRadioProx(); }
     if (n === 'noches') actualizarNoches();
+    if (n === 'fotos') { pedirPasesFotos(); actualizarProximoFoto(); cargarFotos(false); }
     if (n === 'ajustes') actualizarObsUI();
   }
   document.querySelectorAll('#pestanas button').forEach((b) => (b.onclick = () => mostrarTab(b.dataset.tab)));
@@ -1416,6 +1574,8 @@
     $('act-url').value = aj.actUrl;
     $('stream-formato').value = aj.streamFormato;
     $('aj-aviso-cartel').checked = aj.avisoCartel;
+    $('fotos-dias').value = String(aj.fotosDias);
+    $('fotos-despejadas').checked = aj.fotosDespejadas;
     $('aj-guia').checked = aj.mostrarGuia;
     $('stream-lista').checked = aj.streamLista;
     $('stream-reloj').checked = aj.streamReloj;
@@ -1457,6 +1617,8 @@
     aj.ciudad = c && Math.abs(c[1] - lat) < 0.01 && Math.abs(c[2] - lon) < 0.01 ? sel : 'Ubicación personalizada';
     aj.lat = lat; aj.lon = lon;
     guardarAjustes(); aplicarAjustesUI(); enviarConfig(); cargarClima();
+    fotosClave = ''; pasesFotosLista = null; ultimoPedidoPasesFotos = 0;
+    if (tabActiva === 'fotos') { pedirPasesFotos(); cargarFotos(true); }
   };
   $('aj-cielo').onchange = cambio('cielo', id, true);
   $('aj-minel').onchange = cambio('minEl', Number, true);
@@ -1514,6 +1676,8 @@
   $('srv-puerto').onchange = (e) => { cambio('servPuerto', (v) => Math.min(65535, Math.max(1024, +v || 8770)), false)(e); aplicarServidor(); };
   $('act-url').onchange = cambio('actUrl', (v) => String(v).trim(), false);
   $('aj-aviso-cartel').onchange = cambio('avisoCartel', Boolean, false);
+  $('fotos-dias').onchange = (e) => { cambio('fotosDias', Number, false)(e); cargarFotos(true); };
+  $('fotos-despejadas').onchange = (e) => { cambio('fotosDespejadas', Boolean, false)(e); mostrarFotos(); };
   $('aj-guia').onchange = (e) => { cambio('mostrarGuia', Boolean, false)(e); actualizarListaLateral(); };
   $('stream-formato').onchange = (e) => { cambio('streamFormato', id, false)(e); aplicarServidor(); };
   $('stream-lista').onchange = (e) => { cambio('streamLista', Boolean, false)(e); aplicarServidor(); };
@@ -1587,6 +1751,7 @@
       guardarAjustes: async (a) => { if (!modoObs) try { localStorage.setItem('satradar-celular-2', JSON.stringify(a)); } catch {} },
       clima: async (lat, lon) => (await fetch(`/api/clima?lat=${lat}&lon=${lon}`)).json(),
       cuentaEstado: async () => null,
+      fotos: async (lat, lon, dias) => (await fetch(`/api/fotos?lat=${lat}&lon=${lon}&dias=${dias}`)).json(),
     };
   }
 

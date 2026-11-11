@@ -204,7 +204,8 @@ function cargar(m) {
     // ~20 lanzamientos ≈ el último mes; todavía por debajo de 450 km = subiendo en fila
     const tren = starlink && apogeo < 450 && codigo(o) >= ultimoLanz - 20;
     if (tren) mg = { std: 4.5, src: 'tren' };
-    sats.push({ id, nombre, rec, std: mg.std, src: mg.src, perigeo, starlink, tren, orb: o._fuente || '' });
+    sats.push({ id, nombre, rec, std: mg.std, src: mg.src, perigeo, starlink, tren, orb: o._fuente || '',
+      rApo: apogeo + RE, wSat: n });
   }
   elegirCandidatos();
 }
@@ -306,45 +307,152 @@ function tic(t) {
 }
 
 // ---------- Próximos pases visibles (próximas 3 horas, en segundo plano) ----------
+
+// ---------- Búsqueda exacta de pases ----------
+// Basado en la idea de Watched (Armaan Gupta, licencia MIT): el ángulo entre el satélite y el
+// observador, visto desde el centro de la Tierra, no puede cambiar más rápido que la velocidad
+// orbital más la rotación terrestre. Si el satélite está lejos del "cono" donde podría verse,
+// se puede saltar en el tiempo sin riesgo de perder un pase; cerca, se revisa fino y los bordes
+// se ajustan al segundo.
+const PASO_FINO = 10000;
+
+function obsEciEn(gmst) {
+  return S.ecfToEci(obsEcf, gmst);
+}
+
+// Ángulo geocéntrico satélite–observador (rad) y radio del satélite (km)
+function anguloGeo(s, t) {
+  const date = new Date(t);
+  const pv = S.propagate(s.rec, date);
+  if (!pv || !pv.position || isNaN(pv.position.x)) return null;
+  const r = pv.position;
+  const o = obsEciEn(S.gstime(date));
+  const nr = Math.hypot(r.x, r.y, r.z), no = Math.hypot(o.x, o.y, o.z);
+  const c = (r.x * o.x + r.y * o.y + r.z * o.z) / (nr * no);
+  return { lam: Math.acos(Math.max(-1, Math.min(1, c))), r: nr };
+}
+
+// Mayor ángulo geocéntrico desde el que se lo ve a "minEl" grados de elevación
+function anguloMaximo(rSat, minElGrados) {
+  const e = minElGrados / DEG;
+  return Math.acos(Math.min(1, (RE / rSat) * Math.cos(e))) - e;
+}
+
+// Intervalos [a, b] dentro de [desde, hasta] en que el Sol está bajo (noche útil)
+function intervalosOscuros(desde, hasta) {
+  const solEl = (t) => { const d = new Date(t); return look(Astro.sunEci(d), S.gstime(d)).el; };
+  const oscuro = (t) => solEl(t) <= cfg.solMax;
+  const out = [];
+  let ini = oscuro(desde) ? desde : null;
+  let prev = desde;
+  for (let t = desde + 60000; t <= hasta + 60000; t += 60000) {
+    const tt = Math.min(t, hasta);
+    const o = oscuro(tt);
+    if (o && ini === null) ini = bisecar((x) => oscuro(x), prev, tt, false);
+    if (!o && ini !== null) { out.push([ini, bisecar((x) => oscuro(x), prev, tt, true)]); ini = null; }
+    prev = tt;
+    if (tt >= hasta) break;
+  }
+  if (ini !== null) out.push([ini, hasta]);
+  return out;
+}
+
+// Momento (al segundo) en que pred cambia entre a y b. siEra=true: era verdadero en a.
+function bisecar(pred, a, b, siEra) {
+  while (b - a > 1000) {
+    const m = Math.round((a + b) / 2);
+    if (pred(m) === siEra) a = m; else b = m;
+  }
+  return siEra ? a : b;
+}
+
+// Busca pases en [desde, hasta] donde "cumple(s, t)" devuelve { ok, el, az, mag }.
+// minEl: elevación mínima geométrica que exige cumple (para el salto seguro).
+function buscarPasesExactos(s, intervalos, minEl, cumple) {
+  const pases = [];
+  const lamMax = anguloMaximo(s.rApo || RE + 2000, minEl) + 0.003;
+  const vel = (s.wSat || 0.0011) + OMEGA; // rad/s
+  for (const [a, b] of intervalos) {
+    let t = a;
+    let previo = null; // { t, ok }
+    let pase = null;
+    while (t <= b) {
+      const g = anguloGeo(s, t);
+      if (!g) break;
+      if (g.lam > lamMax) {
+        // Lejos: imposible que se vea antes de este salto
+        if (pase) { cerrarPase(pase, previo.t, t, s, cumple, pases); pase = null; }
+        previo = null;
+        t += Math.max(5000, ((g.lam - lamMax) / vel) * 1000 * 0.85);
+        continue;
+      }
+      const c = cumple(s, t);
+      if (c.ok) {
+        if (!pase) {
+          const ini = previo && !previo.ok ? bisecar((x) => cumple(s, x).ok, previo.t, t, false) : t;
+          pase = { ini, mejorMag: c.mag, muestras: [] };
+        }
+        pase.muestras.push({ t, el: c.el, az: c.az, mag: c.mag });
+        if (c.mag < pase.mejorMag) pase.mejorMag = c.mag;
+      } else if (pase) {
+        cerrarPase(pase, previo.t, t, s, cumple, pases);
+        pase = null;
+      }
+      previo = { t, ok: c.ok };
+      t += PASO_FINO;
+    }
+    if (pase) cerrarPase(pase, previo ? previo.t : b, null, s, cumple, pases, b);
+  }
+  return pases;
+}
+
+function cerrarPase(pase, ultimoOk, siguiente, s, cumple, pases, limite) {
+  const fin = siguiente != null ? bisecar((x) => cumple(s, x).ok, ultimoOk, siguiente, true) : (limite || ultimoOk);
+  // Punto más alto: sección áurea alrededor de la mejor muestra
+  let mejor = pase.muestras.reduce((m, q) => (q.el > m.el ? q : m), pase.muestras[0]);
+  let lo = Math.max(pase.ini, mejor.t - PASO_FINO), hi = Math.min(fin, mejor.t + PASO_FINO);
+  const elEn = (t) => { const c = cumple(s, t); return c.el; };
+  const phi = 0.6180339887;
+  let x1 = hi - phi * (hi - lo), x2 = lo + phi * (hi - lo), f1 = elEn(x1), f2 = elEn(x2);
+  for (let k = 0; k < 14 && hi - lo > 1000; k++) {
+    if (f1 < f2) { lo = x1; x1 = x2; f1 = f2; x2 = lo + phi * (hi - lo); f2 = elEn(x2); }
+    else { hi = x2; x2 = x1; f2 = f1; x1 = hi - phi * (hi - lo); f1 = elEn(x1); }
+  }
+  const tMax = Math.round((lo + hi) / 2);
+  const cMax = cumple(s, tMax), cIni = cumple(s, pase.ini), cFin = cumple(s, fin);
+  pases.push({
+    id: s.id, nombre: s.nombre, ini: pase.ini, fin,
+    azIni: cIni.az, elIni: cIni.el, azFin: cFin.az, elFin: cFin.el,
+    tMax, maxEl: Math.max(cMax.el, mejor.el), azMax: cMax.el >= mejor.el ? cMax.az : mejor.az,
+    mag: Math.min(pase.mejorMag, cMax.mag ?? Infinity, cIni.mag ?? Infinity, cFin.mag ?? Infinity),
+    src: s.src, tren: s.tren,
+  });
+}
+
+// Condición "visible a ojo desnudo" en un instante
+function visibleEn(s, t) {
+  const c = contexto(t, true);
+  const e = evaluar(s, c, false);
+  if (!e || e.el < cfg.minEl) return { ok: false, el: e ? e.el : -90, az: e ? e.az : 0 };
+  const f = evaluar(s, c, true);
+  return { ok: !!f.visible, el: f.el, az: f.az, mag: f.mag };
+}
+
 function buscarProximos(desde) {
   const gen = ++prox.generacion;
   prox.calculando = true;
   prox.desde = desde;
-  const inicio = Math.ceil(desde / PASO_PROX) * PASO_PROX;
-  const pasos = [];
-  for (let k = 0; k < 180; k++) {
-    const c = contexto(inicio + k * PASO_PROX);
-    if (c.oscuro) pasos.push(c);
-  }
+  const intervalos = intervalosOscuros(desde, desde + 3 * 3600000);
   const lista = [];
   let i = 0;
-  const lote = 400;
+  const lote = 300;
   self.postMessage({ tipo: 'progreso', valor: 0 });
   function trabajar() {
     if (gen !== prox.generacion) return;
     const finLote = Math.min(i + lote, candidatos.length);
     for (; i < finLote; i++) {
-      const s = candidatos[i];
-      let actual = null;
-      let ultimoT = -Infinity;
-      for (const c of pasos) {
-        const e = evaluar(s, c, false);
-        if (e && e.el >= cfg.minEl) {
-          const f = evaluar(s, c, true);
-          if (f && f.visible) {
-            if (actual && c.t - ultimoT <= PASO_PROX * 2) {
-              actual.fin = c.t; actual.azFin = f.az; actual.elFin = f.el;
-              if (f.el > actual.maxEl) { actual.maxEl = f.el; actual.azMax = f.az; actual.tMax = c.t; }
-              if (f.mag < actual.mag) actual.mag = f.mag;
-            } else {
-              actual = { id: s.id, nombre: s.nombre, ini: c.t, fin: c.t, azIni: f.az, elIni: f.el, azFin: f.az, elFin: f.el,
-                maxEl: f.el, azMax: f.az, tMax: c.t, mag: f.mag, src: s.src, tren: s.tren };
-              lista.push(actual);
-            }
-            ultimoT = c.t;
-          }
-        }
-      }
+      if (!intervalos.length) { i = candidatos.length; break; }
+      for (const p of buscarPasesExactos(candidatos[i], intervalos, cfg.minEl, visibleEn)) lista.push(p);
     }
     self.postMessage({ tipo: 'progreso', valor: candidatos.length ? i / candidatos.length : 1 });
     if (i < candidatos.length) setTimeout(trabajar, 0);
@@ -364,12 +472,7 @@ function planificarNoches(desde) {
   const gen = ++noches.generacion;
   noches.calculando = true;
   noches.desde = desde;
-  const inicio = Math.ceil(desde / PASO_NOCHES) * PASO_NOCHES;
-  const pasos = [];
-  for (let k = 0; k < (7 * 86400000) / PASO_NOCHES; k++) {
-    const c = contexto(inicio + k * PASO_NOCHES, true);
-    if (c.oscuro) pasos.push(c);
-  }
+  const intervalos = intervalosOscuros(desde, desde + 7 * 86400000);
   // Solo los que pueden verse bien (sin la nube de Starlink comunes, salvo trenes)
   const lim = cfg.nelm - 0.5;
   const grupo = candidatos.filter((s) => (!s.starlink || s.tren) && s.std - 15.75 + 2.5 * Math.log10(s.perigeo * s.perigeo) <= lim - 0.3);
@@ -377,24 +480,11 @@ function planificarNoches(desde) {
   let i = 0;
   function trabajar() {
     if (gen !== noches.generacion) return;
-    const finLote = Math.min(i + 60, grupo.length);
+    const finLote = Math.min(i + 40, grupo.length);
     for (; i < finLote; i++) {
-      const s = grupo[i];
-      let actual = null, ultimoT = -Infinity;
-      for (const c of pasos) {
-        const e = evaluar(s, c, false);
-        if (!e || e.el < cfg.minEl) continue;
-        const f = evaluar(s, c, true);
-        if (!f || !f.visible) continue;
-        if (actual && c.t - ultimoT <= PASO_NOCHES * 2) {
-          actual.fin = c.t;
-          if (f.el > actual.maxEl) actual.maxEl = f.el;
-          if (f.mag < actual.mag) actual.mag = f.mag;
-        } else {
-          actual = { id: s.id, nombre: s.nombre, ini: c.t, fin: c.t, maxEl: f.el, mag: f.mag, azIni: f.az, tren: s.tren, nubes: c.nubes };
-          lista.push(actual);
-        }
-        ultimoT = c.t;
+      for (const p of buscarPasesExactos(grupo[i], intervalos, cfg.minEl, visibleEn)) {
+        p.nubes = penNubes(p.ini);
+        lista.push(p);
       }
     }
     self.postMessage({ tipo: 'progreso-noches', valor: grupo.length ? i / grupo.length : 1 });
@@ -471,24 +561,70 @@ function radioEstado(t) {
 }
 
 function radioProximos(desde, minEl) {
-  const inicio = Math.ceil(desde / 60000) * 60000;
-  const pasos = [];
-  for (let k = 0; k < 180; k++) pasos.push(contexto(inicio + k * 60000, true));
+  const intervalo = [[desde, desde + 3 * 3600000]];
+  const geom = (s, t) => {
+    const d = new Date(t);
+    const pv = S.propagate(s.rec, d);
+    if (!pv || !pv.position || isNaN(pv.position.x)) return { ok: false, el: -90, az: 0 };
+    const la = look(pv.position, S.gstime(d));
+    return { ok: la.el >= minEl, el: la.el, az: la.az, mag: 0 };
+  };
   const lista = [];
-  for (const s of radioSats) {
-    let actual = null;
-    for (const c of pasos) {
-      const pv = S.propagate(s.rec, c.date);
-      if (!pv || !pv.position || isNaN(pv.position.x)) break;
-      const la = look(pv.position, c.gmst);
-      if (la.el >= minEl) {
-        if (actual) { actual.fin = c.t; if (la.el > actual.maxEl) actual.maxEl = la.el; }
-        else { actual = { id: s.id, nombre: s.nombre, ini: c.t, fin: c.t, maxEl: la.el, azIni: la.az }; lista.push(actual); }
-      } else actual = null;
-    }
-  }
+  for (const s of radioSats) for (const p of buscarPasesExactos(s, intervalo, minEl, geom)) lista.push(p);
   lista.sort((a, b) => a.ini - b.ini);
   self.postMessage({ tipo: 'radio-proximos', desde, lista });
+}
+
+// ---------- Satélites de fotos (Sentinel-2 y Landsat) ----------
+// Su cámara cubre una franja de ~290 km (Sentinel-2) o ~185 km (Landsat): te fotografían cuando
+// pasan casi por encima (elevación mínima aprox. según la franja) y es de día.
+const SAT_FOTOS = { 40697: 77, 42063: 77, 60989: 77, 39084: 81, 49260: 81 };
+const NOMBRE_FOTOS = { 40697: 'Sentinel-2A', 42063: 'Sentinel-2B', 60989: 'Sentinel-2C', 39084: 'Landsat 8', 49260: 'Landsat 9' };
+function posiciones(consultas) {
+  const porId = new Map(sats.map((s) => [s.id, s]));
+  return consultas.map((q) => {
+    const s = porId.get(+q.norad);
+    if (!s) return null;
+    // La hora del archivo marca el comienzo de la franja, que puede ser minutos antes de que el
+    // satélite pase por encima: se busca su punto más alto entre 10 min antes y 60 min después.
+    const en = (t) => {
+      const d = new Date(t);
+      const pv = S.propagate(s.rec, d);
+      if (!pv || !pv.position || isNaN(pv.position.x)) return null;
+      const la = look(pv.position, S.gstime(d));
+      return { t, el: la.el, az: la.az, range: la.range, alt: Math.hypot(pv.position.x, pv.position.y, pv.position.z) - RE };
+    };
+    let mejor = null;
+    for (let t = q.t - 600000; t <= q.t + 3600000; t += 15000) {
+      const p = en(t);
+      if (p && (!mejor || p.el > mejor.el)) mejor = p;
+    }
+    if (!mejor) return null;
+    for (let paso = 7000; paso >= 500; paso = Math.round(paso / 2)) {
+      for (const t of [mejor.t - paso, mejor.t + paso]) { const p = en(t); if (p && p.el > mejor.el) mejor = p; }
+    }
+    return mejor;
+  });
+}
+function pasesFotos(desde, dias) {
+  const porId = new Map(sats.map((s) => [s.id, s]));
+  const lista = [];
+  for (const [id, umbral] of Object.entries(SAT_FOTOS)) {
+    const s = porId.get(+id);
+    if (!s) continue;
+    const cond = (sat, t) => {
+      const d = new Date(t);
+      const pv = S.propagate(sat.rec, d);
+      if (!pv || !pv.position || isNaN(pv.position.x)) return { ok: false, el: -90, az: 0 };
+      const g = S.gstime(d);
+      const la = look(pv.position, g);
+      const ok = la.el >= umbral && look(Astro.sunEci(d), g).el > 5;
+      return { ok, el: la.el, az: la.az, mag: 0 };
+    };
+    for (const p of buscarPasesExactos(s, [[desde, desde + dias * 86400000]], umbral, cond)) lista.push({ ...p, nombre: NOMBRE_FOTOS[id] || p.nombre });
+  }
+  lista.sort((a, b) => a.ini - b.ini);
+  return lista;
 }
 
 self.onmessage = (ev) => {
@@ -511,6 +647,10 @@ self.onmessage = (ev) => {
     tic(m.t);
   } else if (m.tipo === 'radio') {
     setRadio(m.transmisores);
+  } else if (m.tipo === 'posiciones') {
+    self.postMessage({ tipo: 'posiciones', pedido: m.pedido, res: posiciones(m.consultas || []) });
+  } else if (m.tipo === 'pases-fotos') {
+    self.postMessage({ tipo: 'pases-fotos', lista: pasesFotos(m.t, m.dias || 8) });
   } else if (m.tipo === 'radio-proximos') {
     radioProximos(m.t, m.minEl || 10);
   }
