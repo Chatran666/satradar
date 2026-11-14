@@ -163,6 +163,16 @@
           <label>Cuando deja de verse <select id="aj-terminar">
             <option value="gris">Queda en gris tenue</option><option value="ocultar">Desaparece</option>
           </select></label>
+          <label class="check"><input type="checkbox" id="aj-mag-manual"> Elegir a mano el brillo de los satélites</label>
+          <div class="dos">
+            <label>Desde mag <select id="aj-mag-desde">
+              <option value="-9">Sin límite</option><option value="-2">−2</option><option value="-1">−1</option>
+              <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            </select></label>
+            <label>Hasta mag <span id="aj-mag-hasta-v" class="valor"></span>
+              <input type="range" id="aj-mag-hasta" min="0.5" max="6" step="0.1"></label>
+          </div>
+          <p class="nota">Cuanto más bajo el número, más brillante. Si en tu zona cuesta ver mag 3, poné "hasta 2.5" y solo vas a ver los que se distinguen fácil. "Desde" sirve para ocultar los muy brillantes. Igual se aplican la Luna, el crepúsculo y las nubes.</p>
           <label class="check"><input type="checkbox" id="aj-starlink"> Incluir Starlink</label>
           <label class="check"><input type="checkbox" id="aj-nombres"> Nombres de los satélites</label>
           <label class="check"><input type="checkbox" id="aj-guia"> Guía con estrellas en las listas ("aparece cerca de Sirio · pasa cerca de…")</label>
@@ -172,11 +182,18 @@
           <label class="check"><input type="checkbox" id="aj-planetas"> Planetas (Venus, Júpiter, Marte, Saturno, Mercurio)</label>
           <label class="check"><input type="checkbox" id="aj-estrellas"> Estrellas brillantes (para orientarte)</label>
           <div class="dos">
-            <label>Estrellas hasta <select id="aj-estrellas-mag">
+            <label>Estrellas desde <select id="aj-estrellas-desde">
+              <option value="-9">Las más brillantes</option><option value="0">mag 0</option><option value="1">mag 1</option>
+              <option value="1.5">mag 1.5</option><option value="2">mag 2</option><option value="2.5">mag 2.5</option><option value="3">mag 3</option>
+            </select></label>
+            <label>hasta <select id="aj-estrellas-mag">
               <option value="1">mag 1 (unas 20)</option><option value="1.5">mag 1.5</option><option value="2">mag 2 (unas 50)</option>
               <option value="2.5">mag 2.5</option><option value="3">mag 3 (unas 170)</option>
+              <option value="3.5">mag 3.5</option><option value="4">mag 4 (unas 500)</option>
             </select></label>
-            <label class="check abajo"><input type="checkbox" id="aj-estrellas-nombres"> Sus nombres</label>
+          </div>
+          <div>
+            <label class="check"><input type="checkbox" id="aj-estrellas-nombres"> Sus nombres</label>
           </div>
         </details>
         <details class="sub-aj">
@@ -399,6 +416,15 @@
       <button id="b-pantalla" title="Pantalla completa (F11)">⛶</button>
     </div>
   </footer>
+</div>
+<div id="ficha" hidden>
+  <div id="ficha-caja">
+    <div id="ficha-cuerpo"></div>
+    <div class="visor-botones">
+      <button id="ficha-ir">Ir a ese momento en el radar</button>
+      <button id="ficha-cerrar">Cerrar ✕</button>
+    </div>
+  </div>
 </div>
 <div id="visor" hidden>
   <div id="visor-marco"><img id="visor-img" alt="Foto del satélite"><div id="visor-marca"></div><div id="visor-cargando">Cargando foto…</div></div>

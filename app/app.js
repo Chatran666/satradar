@@ -19,6 +19,7 @@
     radRango: 'fc0013', radRadar: false, rigOn: false, rigHost: '127.0.0.1', rigPuerto: 4532,
     servCelular: false, servObs: false, servPuerto: 8770, actUrl: '',
     avisoCartel: true, mostrarGuia: true, fotosDias: 30, fotosDespejadas: false,
+    magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
     streamFormato: 'horizontal', streamLista: true, streamReloj: true, streamNombres: true, streamLetra: 120,
   };
   let aj = { ...DEFECTO };
@@ -64,7 +65,12 @@
   }
 
   // ---------- Motor ----------
+  // Dos motores: uno solo para el radar en vivo (nunca se traba) y otro para los cálculos pesados
   const motor = new Worker('motor.js');
+  const calc = new Worker('motor.js');
+  motor.postMessage({ tipo: 'rol', rol: 'vivo' });
+  calc.postMessage({ tipo: 'rol', rol: 'calc' });
+  const ambos = (m) => { motor.postMessage(m); calc.postMessage(m); };
   let estado = null;
   let proximos = null;
   let progresoProx = 0;
@@ -74,7 +80,13 @@
   let estadosPrevios = new Map();
   let cargado = false;
 
-  motor.onmessage = (ev) => {
+  calc.onmessage = (ev) => {
+    const t = ev.data && ev.data.tipo;
+    if (t === 'cargado' || t === 'progreso-carga' || t === 'estado') return;
+    manejarMotor(ev);
+  };
+  motor.onmessage = (ev) => manejarMotor(ev);
+  function manejarMotor(ev) {
     const m = ev.data;
     if (m.tipo === 'estado') {
       esperando = false;
@@ -85,10 +97,13 @@
       actualizarListaAhora();
       actualizarListaLateral();
       revisarAvisos();
+      if (tabActiva === 'proximos' && performance.now() - ultimaListaProx > 15000) { ultimaListaProx = performance.now(); actualizarProximos(); }
       if (tabActiva === 'radio') actualizarRadio();
       seguirRig();
     } else if (m.tipo === 'proximos') {
       proximos = m;
+      for (const p of m.lista) historialPases.set(clavePase(p), p);
+      for (const [k, p] of historialPases) if (p.fin < Date.now() - 3 * 3600000 && p.fin < (estado ? estado.t : 0) - 3 * 3600000) historialPases.delete(k);
       progresoProx = 1;
       actualizarProximos();
       actualizarListaLateral();
@@ -120,7 +135,8 @@
       cargado = true;
       $('aviso-carga').style.display = 'none';
     }
-  };
+  }
+
 
   // ---------- Nubes ----------
   const NUBES_MANUAL = { despejado: 0, finas: 1.0, parcial: 1.8, nublado: 4 };
@@ -175,9 +191,10 @@
 
   function enviarConfig() {
     const c = cieloElegido();
-    motor.postMessage({
+    ambos({
       tipo: 'config',
-      cfg: { nelm: c.nelm + (aj.usarAprendido && ajusteAprendido().usable ? ajusteAprendido().c : 0), minEl: +aj.minEl, solMax: +aj.solMax, starlink: aj.starlink, alTerminar: aj.alTerminar, nubes: nubesParaMotor() },
+      cfg: { nelm: c.nelm + (aj.usarAprendido && ajusteAprendido().usable ? ajusteAprendido().c : 0), minEl: +aj.minEl, solMax: +aj.solMax, starlink: aj.starlink, alTerminar: aj.alTerminar, nubes: nubesParaMotor(),
+        magHasta: aj.magManual ? +aj.magHasta : null },
       obs: { lat: +aj.lat, lon: +aj.lon, alt: 0.02 },
     });
     proximos = null;
@@ -208,7 +225,7 @@
     if (firma === firmaCargada) return;
     firmaCargada = firma;
     carga('Preparando ' + d.orbitas.length.toLocaleString('es-AR') + ' objetos…', 0.75, 'Calculando órbitas');
-    motor.postMessage({ tipo: 'cargar', orbitas: d.orbitas, brillantes: d.brillantes, mccants: d.mccants, gcat: d.gcat, rcs: d.rcs, transmisores: d.transmisores || {} });
+    ambos({ tipo: 'cargar', orbitas: d.orbitas, brillantes: d.brillantes, mccants: d.mccants, gcat: d.gcat, rcs: d.rcs, transmisores: d.transmisores || {} });
     transmisores = d.transmisores || {};
     radioProx = null;
     enviarConfig();
@@ -444,14 +461,17 @@
   }
 
   // Limita los rojos ("por hacerse visibles") a los N más próximos
+  // Brillo mínimo elegido a mano: oculta los más brillantes que "desde"
+  const pasaDesde = (mag) => !aj.magManual || !(aj.magDesde > -9) || mag >= aj.magDesde;
   function itemsEnRadar() {
     const n = +aj.maxPend || 0;
-    if (!n) return estado.items;
+    const base = estado.items.filter((i) => pasaDesde(magMaxima(i)));
+    if (!n) return base;
     const t = estado.t;
-    const pend = estado.items.filter((i) => i.estado === 'pendiente')
+    const pend = base.filter((i) => i.estado === 'pendiente')
       .sort((a, b) => proximoVisible(a, t) - proximoVisible(b, t)).slice(0, n);
     const ok = new Set(pend.map((i) => i.id));
-    return estado.items.filter((i) => i.estado !== 'pendiente' || ok.has(i.id) || i.id === seleccion);
+    return base.filter((i) => i.estado !== 'pendiente' || ok.has(i.id) || i.id === seleccion);
   }
 
   // ---------- Estrellas brillantes ----------
@@ -476,8 +496,8 @@
     return out;
   }
   const ESTR = (window.ESTRELLAS || []).map(([ra, dec, mag, nombre]) => ({ ra, dec, mag, nombre }));
-  function estrellasAzEl(t, magMax = aj.estrellasMag, minEl = 0) {
-    return radecAzEl(ESTR.filter((e) => e.mag <= magMax), t, minEl);
+  function estrellasAzEl(t, magMax = aj.estrellasMag, minEl = 0, magMin = -9) {
+    return radecAzEl(ESTR.filter((e) => e.mag <= magMax && e.mag >= magMin), t, minEl);
   }
   function planetasAzEl(t, minEl = 0) {
     if (!window.Planetas) return [];
@@ -519,7 +539,7 @@
     g.globalAlpha = 1;
   }
   function dibujarEstrellas(t) {
-    const lista = estrellasAzEl(t).sort((a, b) => a.mag - b.mag);
+    const lista = estrellasAzEl(t, aj.estrellasMag, 0, aj.estrellasDesde).sort((a, b) => a.mag - b.mag);
     const f = ft();
     const ocupados = []; // rectángulos de nombres ya escritos
     for (const e of lista) {
@@ -643,7 +663,7 @@
       `<span class="amarillo">Visibles ahora: ${vis}</span>   <span class="alerta">por hacerse visibles: ${pen}</span>`,
       `Sol: elev ${fmtGrado(sol)} (${fase})`,
       `Luna: az ${fmtGrado(estado.luna.az)}, elev ${fmtGrado(estado.luna.el)}, ilum ${Math.round(estado.luna.ilum * 100)}%`,
-      `Límite a ojo: mag ${estado.limite.toFixed(1)}  (cielo ${c.nombre.toLowerCase()}${c.auto ? ', por población' : ''})`,
+      `Límite a ojo: mag ${estado.limite.toFixed(1)}  (${aj.magManual && Math.abs(estado.limite - aj.magHasta) < 0.05 ? 'elegido a mano' : 'cielo ' + c.nombre.toLowerCase() + (c.auto ? ', por población' : '')})`,
     ];
     if (!aj.nubesOn) {
       // nubes apagadas: no se informa nada
@@ -656,6 +676,8 @@
       lineas.push(`Nubes: ${Math.round(nubesAhora(estado.t)[1])}% (pronóstico)`);
     }
     if (!estado.oscuro) lineas.push('<span class="alerta">Todavía hay demasiada luz de día para ver satélites</span>');
+    const atraso = !tiempo.pausa && tiempo.vel === 1 ? (ahoraSim() - estado.t) / 1000 : 0;
+    if (atraso > 2) lineas.push(`<span class="alerta">Radar atrasado ${atraso.toFixed(0)} s: el equipo está muy ocupado</span>`);
     $('hud-arriba').innerHTML = lineas.join('\n');
     $('hud-abajo-izq').textContent = `${aj.ciudad}: ${(+aj.lat).toFixed(4)}°, ${(+aj.lon).toFixed(4)}°`;
     actualizarInfoDatos();
@@ -873,8 +895,37 @@
     return out.map((x) => (x.n > 1 ? { ...x, nombre: `Tren de Starlink (${x.n} satélites)` } : x.tren ? { ...x, nombre: x.nombre + ' (tren)' } : x));
   }
   function filtrarStarlink(lista) {
-    return aj.proxSinStarlink ? lista.filter((p) => !/^STARLINK/.test(p.nombre) || p.tren) : lista;
+    return (aj.proxSinStarlink ? lista.filter((p) => !/^STARLINK/.test(p.nombre) || p.tren) : lista).filter((p) => pasaDesde(p.mag));
   }
+
+  // ---------- Pases recién terminados (para marcar si se vieron) ----------
+  const historialPases = new Map();
+  const clavePase = (p) => p.id + ':' + p.ini;
+  function recientes(t) {
+    return agrupar(filtrarStarlink([...historialPases.values()].filter((p) => p.ini <= t && p.fin > t - 45 * 60000 && p.fin <= t + 1000)
+      .sort((a, b) => a.ini - b.ini))).slice(-6);
+  }
+
+  // ---------- Ficha de un pase (al tocarlo en una lista) ----------
+  let fichaActual = null;
+  function abrirFicha(p) {
+    fichaActual = p;
+    const t = estado ? estado.t : Date.now();
+    const empezo = p.ini <= t;
+    const dur = Math.max(1, Math.round((p.fin - p.ini) / 1000));
+    const est = p.fin < t ? 'Ya pasó' : empezo ? 'Pasando ahora' : 'Empieza ' + (p.ini - t < 3600000 ? 'en ' + cuentaRegresiva(p.ini - t) : 'a las ' + hora(p.ini));
+    $('ficha-cuerpo').innerHTML = `<div class="n">${esc(p.nombre)}</div>
+      <div class="ficha-estado">${est}</div>
+      <div>Brillo máximo: <b>mag ${p.mag.toFixed(1)}</b>${p.mag <= 2 ? ' (se ve fácil)' : p.mag <= 3 ? ' (se ve bien con cielo oscuro)' : ' (cuesta en la ciudad)'}</div>
+      <div>Aparece ${horaSeg(p.ini)} por el ${puntoCardinal(p.azIni)} · se apaga ${horaSeg(p.fin)} por el ${puntoCardinal(p.azFin)}</div>
+      <div>Sube hasta ${Math.round(p.maxEl)}° · dura ${dur >= 60 ? Math.floor(dur / 60) + ' min ' + (dur % 60) + ' s' : dur + ' s'}</div>
+      ${aj.mostrarGuia ? `<div class="guia">${esc(guia(p))}</div>` : ''}
+      ${empezo ? `<div class="ficha-obs">¿Lo viste? ${botonesObs(p)}</div>` : ''}`;
+    $('ficha').hidden = false;
+  }
+  $('ficha-cerrar').onclick = () => { $('ficha').hidden = true; fichaActual = null; };
+  $('ficha').addEventListener('click', (e) => { if (e.target.id === 'ficha') { $('ficha').hidden = true; fichaActual = null; } });
+  $('ficha-ir').onclick = () => { if (fichaActual) { fijarTiempo(fichaActual.ini - 60000); tic(); } $('ficha').hidden = true; };
 
   // ---------- Observaciones (Lo vi / No lo vi) y ajuste aprendido ----------
   function ajusteAprendido() {
@@ -893,10 +944,11 @@
     }
     return { c: mejor.c, n, vistos, usable: true };
   }
+  const claveObs = (id, ini) => id + ':' + Math.round(ini / 300000);
   function registrarObs(it, visto) {
     const pv = it.pts ? paseVisibleDe(it) : it;
     const ini = pv ? pv.ini : it.ini;
-    const k = it.id + ':' + Math.round(ini / 60000);
+    const k = claveObs(it.id, ini);
     const mag = it.pts ? Math.min(...it.pts.filter((q) => q.v && q.m != null).map((q) => q.m), it.mag) : it.mag;
     const lista = (aj.observaciones || []).filter((o) => o.k !== k);
     lista.push({ k, id: it.id, nombre: it.nombre, t: ini, mag: Math.round(mag * 10) / 10, lim: Math.round((estado ? estado.limite : 4) * 10) / 10, visto });
@@ -909,13 +961,14 @@
   function obsDe(it) {
     const pv = it.pts ? paseVisibleDe(it) : it;
     if (!pv) return null;
-    const k = it.id + ':' + Math.round(pv.ini / 60000);
+    const k = claveObs(it.id, pv.ini);
     return (aj.observaciones || []).find((o) => o.k === k) || null;
   }
   function botonesObs(it) {
     const o = obsDe(it);
     if (o) return `<span class="obs-hecha">${o.visto ? '✓ lo viste' : '✗ no lo viste'}</span>`;
-    return `<span class="obs-btns"><button data-obs="1" data-id="${it.id}" title="Lo vi">✓</button><button data-obs="0" data-id="${it.id}" title="No lo vi">✗</button></span>`;
+    const k = it.pts ? '' : ` data-k="${esc(clavePase(it))}"`;
+    return `<span class="obs-btns"><button data-obs="1" data-id="${it.id}"${k} title="Lo vi">✓ Lo vi</button><button data-obs="0" data-id="${it.id}"${k} title="No lo vi">✗ No</button></span>`;
   }
   function actualizarObsUI() {
     const a = ajusteAprendido();
@@ -936,8 +989,10 @@
     const b = e.target.closest('[data-obs]');
     if (!b || !estado) return;
     e.stopPropagation();
-    const it = estado.items.find((i) => i.id === +b.dataset.id);
+    const it = b.dataset.k ? historialPases.get(b.dataset.k) : estado.items.find((i) => i.id === +b.dataset.id);
     if (it) registrarObs(it, b.dataset.obs === '1');
+    actualizarListaLateral(); actualizarProximos();
+    if (!$('ficha').hidden && fichaActual) abrirFicha(fichaActual);
   }, true);
 
   // ---------- Aviso antes de cada pase ----------
@@ -1023,19 +1078,24 @@
     for (const it of estado.items) {
       finPorId.set(it.id, it.fin);
       if (it.estado === 'visible') {
-        filas.push({ clase: 'vis', orden: -1, izq: 'AHORA', mag: it.mag, nombre: it.nombre,
+        filas.push({ clase: 'vis', orden: -1, izq: 'AHORA', mag: it.mag, nombre: it.nombre, id: it.id,
           sub: `al ${puntoCardinal(it.az)} · ${Math.round(it.el)}° de altura` });
       } else if (it.estado === 'pendiente') {
         const pv = proximoVisible(it, t);
         const p = it.pts.find((q) => q.t === pv) || it;
-        filas.push({ clase: 'pen', orden: pv, izq: 'en ' + cuentaRegresiva(pv - t), mag: magMaxima(it), nombre: it.nombre,
+        filas.push({ clase: 'pen', orden: pv, izq: 'en ' + cuentaRegresiva(pv - t), mag: magMaxima(it), nombre: it.nombre, id: it.id,
           sub: `ya está en el cielo · aparece al ${puntoCardinal(p.az)}` });
       }
+    }
+    for (const p of recientes(t)) {
+      const o = obsDe(p);
+      filas.push({ clase: 'rec', orden: -2, izq: 'pasó', mag: p.mag, nombre: p.nombre, k: clavePase(p),
+        sub: `${horaSeg(p.ini)} · ${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)}`, obs: o ? (o.visto ? '✓ lo viste' : '✗ no lo viste') : null, p });
     }
     if (proximos) {
       const futuros = proximos.lista.filter((p) => p.ini > t && !(finPorId.has(p.id) && p.ini <= finPorId.get(p.id)));
       for (const p of agrupar(filtrarStarlink(futuros))) {
-        filas.push({ clase: 'prox' + (p.tren ? ' tren' : ''), orden: p.ini, izq: 'en ' + cuentaRegresiva(p.ini - t), mag: p.mag, nombre: p.nombre,
+        filas.push({ clase: 'prox' + (p.tren ? ' tren' : ''), orden: p.ini, izq: 'en ' + cuentaRegresiva(p.ini - t), mag: p.mag, nombre: p.nombre, k: clavePase(p), p,
           sub: `${horaSeg(p.ini)} · ${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)} · hasta ${Math.round(p.maxEl)}°`, guia: aj.mostrarGuia ? guia(p) : '' });
       }
     }
@@ -1046,7 +1106,9 @@
     let html = '<div class="titulo">PRÓXIMOS PASES VISIBLES</div>';
     if (!filas.length) html += `<div class="sub">${proximos ? 'Ninguno en las próximas 3 horas' : 'Calculando…'}</div>`;
     for (const f of filas.slice(0, caben)) {
-      html += `<div class="pp ${f.clase}"><div class="l1"><span class="cuenta">${f.izq}</span><span class="mag">mag ${f.mag.toFixed(1)}</span><span class="nom">${esc(f.nombre)}</span></div><div class="sub">${esc(f.sub)}</div>${f.guia ? `<div class="sub guia">${esc(f.guia)}</div>` : ''}</div>`;
+      if (f.k && f.p) historialPases.set(f.k, f.p);
+      const obsHtml = f.clase === 'rec' ? (f.obs ? `<div class="sub obs-hecha">${f.obs}</div>` : `<div class="sub">¿Lo viste? ${botonesObs(f.p)}</div>`) : '';
+      html += `<div class="pp ${f.clase}"${f.k ? ` data-k="${esc(f.k)}"` : f.id ? ` data-id="${f.id}"` : ''}><div class="l1"><span class="cuenta">${f.izq}</span><span class="mag">mag ${f.mag.toFixed(1)}</span><span class="nom">${esc(f.nombre)}</span></div><div class="sub">${esc(f.sub)}</div>${f.guia ? `<div class="sub guia">${esc(f.guia)}</div>` : ''}${obsHtml}</div>`;
     }
     el.innerHTML = html;
     // Si no entra todo, se sacan filas enteras del final (nunca queda una cortada a la mitad)
@@ -1062,18 +1124,26 @@
       cont.innerHTML = '<div class="vacio">Calculando los pases visibles de las próximas 3 horas…</div>';
       return;
     }
-    const lista = agrupar(filtrarStarlink(proximos.lista));
-    if (!lista.length) {
-      cont.innerHTML = '<div class="vacio">No hay pases visibles en las próximas 3 horas.</div>';
-      return;
-    }
-    cont.innerHTML = lista.slice(0, 400).map((p) =>
-      `<div class="fila" data-ini="${p.ini}" title="Tocá para ir a ese momento">
+    const t = estado ? estado.t : Date.now();
+    const fila = (p, extra) => {
+      historialPases.set(clavePase(p), p);
+      return `<div class="fila" data-k="${esc(clavePase(p))}" title="Tocá para ver los detalles">
         <span class="punto${p.tren ? ' tren' : ''}" style="background:${C.visible}"></span>
         <span class="nombre">${horaSeg(p.ini)}  ${esc(p.nombre)}</span><span class="der">mag ${p.mag.toFixed(1)}</span>
         <span class="sub">${puntoCardinal(p.azIni)} → ${puntoCardinal(p.azFin)} · máx ${fmtGrado(p.maxEl)} · ${duracion(Math.max(1, Math.round((p.fin - p.ini) / 60000)))}</span>
-        ${aj.mostrarGuia ? `<span class="sub guia">${esc(guia(p))}</span>` : ''}
-      </div>`).join('');
+        ${aj.mostrarGuia ? `<span class="sub guia">${esc(guia(p))}</span>` : ''}${extra || ''}
+      </div>`;
+    };
+    let html = '';
+    const rec = recientes(t);
+    if (rec.length) {
+      html += '<div class="titulo">RECIÉN PASARON · ¿LOS VISTE?</div>';
+      html += rec.map((p) => { const o = obsDe(p); return fila(p, `<span class="sub">${o ? `<span class="obs-hecha">${o.visto ? '✓ lo viste' : '✗ no lo viste'}</span>` : botonesObs(p)}</span>`); }).join('');
+      html += '<div class="titulo">PRÓXIMOS</div>';
+    }
+    const lista = agrupar(filtrarStarlink(proximos.lista.filter((p) => p.fin > t)));
+    html += lista.length ? lista.slice(0, 400).map((p) => fila(p)).join('') : '<div class="vacio">No hay pases visibles en las próximas 3 horas.</div>';
+    cont.innerHTML = html;
   }
 
   // ---------- Noches (planificador) ----------
@@ -1171,7 +1241,7 @@
     if (!cargado) return;
     if (!forzar && Date.now() - ultimoPedidoRadio < 300000 && radioProx) return;
     ultimoPedidoRadio = Date.now();
-    motor.postMessage({ tipo: 'radio-proximos', t: ahoraSim(), minEl: 10 });
+    calc.postMessage({ tipo: 'radio-proximos', t: ahoraSim(), minEl: 10 });
   }
   $('lista-radio').addEventListener('click', (e) => {
     const tx = e.target.closest('.tx');
@@ -1290,7 +1360,7 @@
     return new Promise((res) => {
       const pedido = ++nPedido;
       pedidosPos.set(pedido, res);
-      motor.postMessage({ tipo: 'posiciones', pedido, consultas });
+      calc.postMessage({ tipo: 'posiciones', pedido, consultas });
       setTimeout(() => { if (pedidosPos.has(pedido)) { pedidosPos.delete(pedido); res(consultas.map(() => null)); } }, 8000);
     });
   }
@@ -1320,7 +1390,7 @@
   function pedirPasesFotos() {
     if (!cargado || (pasesFotosLista && Date.now() - ultimoPedidoPasesFotos < 3600000)) return;
     ultimoPedidoPasesFotos = Date.now();
-    motor.postMessage({ tipo: 'pases-fotos', t: Date.now(), dias: 8 });
+    calc.postMessage({ tipo: 'pases-fotos', t: Date.now(), dias: 8 });
   }
   async function cargarFotos(forzar) {
     const clave = [(+aj.lat).toFixed(3), (+aj.lon).toFixed(3), aj.fotosDias].join('|');
@@ -1455,9 +1525,19 @@
 
   $('lista-proximos').addEventListener('click', (e) => {
     const f = e.target.closest('.fila');
-    if (!f) return;
-    fijarTiempo(+f.dataset.ini - 60000);
-    tic();
+    if (!f || e.target.closest('[data-obs]')) return;
+    const p = historialPases.get(f.dataset.k);
+    if (p) abrirFicha(p);
+  });
+  $('hud-proximos').addEventListener('click', (e) => {
+    if (e.target.closest('[data-obs]')) return;
+    const r = e.target.closest('.pp');
+    if (!r) return;
+    if (r.dataset.k && historialPases.get(r.dataset.k)) return abrirFicha(historialPases.get(r.dataset.k));
+    // Satélite que está en el cielo ahora: su pase visible
+    const it = estado && estado.items.find((i) => i.id === +r.dataset.id);
+    const pv = it && paseVisibleDe(it);
+    if (pv) abrirFicha({ ...pv, nombre: it.nombre, mag: magMaxima(it), id: it.id });
   });
 
   let tabActiva = 'ahora';
@@ -1561,6 +1641,12 @@
     $('aj-estrellas').checked = aj.estrellas;
     $('aj-estrellas-mag').value = String(aj.estrellasMag);
     $('aj-estrellas-nombres').checked = aj.estrellasNombres;
+    $('aj-estrellas-desde').value = String(aj.estrellasDesde);
+    $('aj-mag-manual').checked = aj.magManual;
+    $('aj-mag-desde').value = String(aj.magDesde);
+    $('aj-mag-hasta').value = aj.magHasta;
+    $('aj-mag-hasta-v').textContent = 'mag ' + (+aj.magHasta).toFixed(1);
+    $('aj-mag-desde').disabled = $('aj-mag-hasta').disabled = !aj.magManual;
     $('aj-vista').value = aj.vista;
     $('aj-planetas').checked = aj.planetas;
     $('rad-rango').value = aj.radRango;
@@ -1662,6 +1748,17 @@
   $('aj-estrellas').onchange = cambio('estrellas', Boolean, false);
   $('aj-estrellas-mag').onchange = cambio('estrellasMag', Number, false);
   $('aj-estrellas-nombres').onchange = cambio('estrellasNombres', Boolean, false);
+  $('aj-estrellas-desde').onchange = cambio('estrellasDesde', Number, false);
+  const refrescarListas = () => { actualizarProximos(); actualizarListaLateral(); actualizarNoches(); };
+  $('aj-mag-manual').onchange = (e) => { cambio('magManual', Boolean, true)(e); refrescarListas(); };
+  $('aj-mag-desde').onchange = (e) => { cambio('magDesde', Number, false)(e); refrescarListas(); };
+  let timerMag = null;
+  $('aj-mag-hasta').oninput = (e) => {
+    aj.magHasta = +e.target.value;
+    $('aj-mag-hasta-v').textContent = 'mag ' + aj.magHasta.toFixed(1);
+    clearTimeout(timerMag);
+    timerMag = setTimeout(() => { guardarAjustes(); enviarConfig(); }, 600); // recalcula al soltar
+  };
   $('aj-vista').onchange = cambio('vista', id, false);
   $('aj-planetas').onchange = cambio('planetas', Boolean, false);
   $('obs-usar').onchange = cambio('usarAprendido', Boolean, true);
@@ -1711,14 +1808,20 @@
   $('st-borrar').onclick = async () => { if (window.api) await window.api.cuentaBorrar(); $('st-clave').value = ''; refrescarCuenta(); };
 
   // ---------- Bucle ----------
+  let ultimaListaProx = 0;
   let esperando = false;
   let enviadoEn = 0;
+  let ultimoTicCalc = 0;
   function tic() {
     // No encolar pedidos si el motor todavía está calculando el anterior
     if (cargado && (!esperando || performance.now() - enviadoEn > 5000)) {
       esperando = true;
       enviadoEn = performance.now();
       motor.postMessage({ tipo: 'tic', t: ahoraSim(), radio: tabActiva === 'radio' || aj.radRadar || !!radioSel });
+    }
+    if (cargado && performance.now() - ultimoTicCalc > 5000) {
+      ultimoTicCalc = performance.now();
+      calc.postMessage({ tipo: 'tic-calc', t: ahoraSim() });
     }
     actualizarReloj();
   }

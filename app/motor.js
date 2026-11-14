@@ -71,7 +71,9 @@ let porId = new Map();
 let obs = { lat: -34.6037, lon: -58.3816, alt: 0.02 };
 let obsGd = null;
 let obsEcf = null;
-let cfg = { nelm: 4.4, minEl: 10, solMax: -6, starlink: true, alTerminar: 'gris', nubes: null };
+let cfg = { nelm: 4.4, minEl: 10, solMax: -6, starlink: true, alTerminar: 'gris', nubes: null, magHasta: null, magDesde: null };
+// Rol de este motor: 'vivo' (solo el radar en tiempo real), 'calc' (pases, noches, radio, fotos) o 'todo'
+let rol = 'todo';
 // nubes: { manual: número | null, horas: { [horaUnix]: penalización } }
 let pases = new Map(); // id -> pase
 let arriba = new Set(); // ids sobre el horizonte
@@ -100,6 +102,8 @@ function limiteActual(solEl, lunaEl, lunaIlum, t) {
   lim -= penNubes(t);
   if (solEl > -12) lim -= Math.min(1.5, ((solEl + 12) / 6) * 1.5);
   if (lunaEl > 0) lim -= 1.2 * lunaIlum * Math.min(1, (lunaEl + 2) / 30);
+  // Tope elegido a mano: nunca mostrar más débiles que esa magnitud
+  if (cfg.magHasta != null) lim = Math.min(lim, cfg.magHasta);
   return lim;
 }
 
@@ -301,6 +305,11 @@ function tic(t) {
     radio: radioEstado(t),
   });
   // Próximos pases: recalcular si la ventana quedó atrás
+  if (rol !== 'vivo') ticCalculos(t);
+}
+
+// Lanza los cálculos pesados cuando hace falta (en el motor de cálculos, aparte del radar en vivo)
+function ticCalculos(t) {
   if (!prox.calculando && (t < prox.desde - 60000 || t > prox.desde + 30 * 60000)) buscarProximos(t);
   // Planificador: después de los próximos pases, cada 6 h o si se saltó el tiempo
   else if (!prox.calculando && !noches.calculando && (t < noches.desde - 3600000 || t > noches.desde + 6 * 3600000)) planificarNoches(t);
@@ -642,6 +651,10 @@ self.onmessage = (ev) => {
     prox.generacion++; prox.calculando = false; prox.desde = 0;
     noches.generacion++; noches.calculando = false; noches.desde = 0;
     radioUltimo = null; radioFin.clear();
+  } else if (m.tipo === 'rol') {
+    rol = m.rol;
+  } else if (m.tipo === 'tic-calc') {
+    if (sats.length) ticCalculos(m.t);
   } else if (m.tipo === 'tic') {
     radioActivo = !!m.radio;
     tic(m.t);

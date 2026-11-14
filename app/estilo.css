@@ -335,3 +335,20 @@ body.obs.sin-reloj #hud-reloj { display: none !important; }
 .visor-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .visor-botones button { background: var(--boton); color: var(--texto); border: 1px solid var(--linea-fuerte); border-radius: 3px; padding: 6px 10px; cursor: pointer; font: 12.5px "Segoe UI", sans-serif; }
 .visor-botones button:hover { border-color: var(--acento); }
+
+/* ---------- 2.2 ---------- */
+#hud-proximos .pp { pointer-events: auto; cursor: pointer; }
+#hud-proximos .pp:hover { background: rgba(255,255,255,.03); }
+#hud-proximos .rec .cuenta { color: var(--texto-tenue); }
+#hud-proximos .rec .nom { color: var(--texto); }
+#hud-proximos .obs-btns button { font-size: 0.85em; height: auto; width: auto; padding: 2px 8px; }
+.obs-btns button { width: auto; padding: 1px 7px; }
+#ficha { position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+#ficha[hidden] { display: none; }
+#ficha-caja { background: var(--panel); border: 1px solid var(--linea-fuerte); border-radius: 8px; padding: 14px 16px; max-width: 460px; width: 100%; font-size: 13.5px; line-height: 1.55; color: var(--texto); }
+#ficha-cuerpo .n { font: 600 17px "Segoe UI", sans-serif; color: var(--acento); }
+#ficha-cuerpo .ficha-estado { color: var(--texto-tenue); margin-bottom: 6px; }
+#ficha-cuerpo .guia { margin-top: 6px; }
+#ficha-cuerpo .ficha-obs { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--linea); }
+#ficha-cuerpo .obs-btns button { font-size: 13px; padding: 5px 12px; height: auto; }
+#ficha .visor-botones { margin-top: 12px; justify-content: flex-end; }
