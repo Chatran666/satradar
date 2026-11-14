@@ -206,6 +206,74 @@ ipcMain.handle('abrir:local', (_e, url) => {
   return true;
 });
 
+// Ubicación del servicio de Windows (wifi/red, o GPS si la PC tiene). No necesita claves.
+const SCRIPT_UBICACION = `
+$ErrorActionPreference = 'Stop'
+$r = @{ metodo = ''; estado = ''; lat = $null; lon = $null; prec = $null }
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime
+  $null = [Windows.Devices.Geolocation.Geolocator,Windows.Devices.Geolocation,ContentType=WindowsRuntime]
+  $acc = [Windows.Devices.Geolocation.Geolocator]::RequestAccessAsync()
+  $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
+  $t1 = $asTask.MakeGenericMethod([Windows.Devices.Geolocation.GeolocationAccessStatus]).Invoke($null, @($acc))
+  $null = $t1.Wait(5000)
+  $r.estado = "$($t1.Result)"
+  if ($r.estado -eq 'Allowed') {
+    $g = New-Object Windows.Devices.Geolocation.Geolocator
+    $g.DesiredAccuracyInMeters = 30
+    $t2 = $asTask.MakeGenericMethod([Windows.Devices.Geolocation.Geoposition]).Invoke($null, @($g.GetGeopositionAsync()))
+    if ($t2.Wait(15000)) {
+      $c = $t2.Result.Coordinate
+      $r.metodo = 'winrt'; $r.lat = $c.Point.Position.Latitude; $r.lon = $c.Point.Position.Longitude; $r.prec = $c.Accuracy
+    }
+  }
+} catch { $r.error1 = $_.Exception.Message }
+if ($r.lat -eq $null -and $r.estado -ne 'Denied') {
+  try {
+    Add-Type -AssemblyName System.Device
+    $w = New-Object System.Device.Location.GeoCoordinateWatcher([System.Device.Location.GeoPositionAccuracy]::High)
+    $null = $w.TryStart($false, [TimeSpan]::FromSeconds(5))
+    $fin = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $fin) {
+      if ("$($w.Permission)" -eq 'Denied' -or "$($w.Status)" -eq 'Disabled') { break }
+      $p = $w.Position.Location
+      if (-not $p.IsUnknown -and $p.HorizontalAccuracy -le 150) { break }
+      Start-Sleep -Milliseconds 500
+    }
+    $p = $w.Position.Location
+    $r.estado2 = "$($w.Permission)/$($w.Status)"
+    if (-not $p.IsUnknown) { $r.metodo = 'device'; $r.lat = $p.Latitude; $r.lon = $p.Longitude; $r.prec = $p.HorizontalAccuracy }
+    $w.Stop()
+  } catch { $r.error2 = $_.Exception.Message }
+}
+$r | ConvertTo-Json -Compress
+`;
+let ubicacionEnCurso = null;
+ipcMain.handle('ubicacion:detectar', () => {
+  if (process.platform !== 'win32') return { ok: false, motivo: 'no-windows' };
+  if (ubicacionEnCurso) return ubicacionEnCurso;
+  ubicacionEnCurso = new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    const cod = Buffer.from(SCRIPT_UBICACION, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', cod],
+      { windowsHide: true, timeout: 45000 }, (err, stdout) => {
+        try {
+          const j = JSON.parse(String(stdout).trim().split(/\r?\n/).pop());
+          const lat = Number(j.lat), lon = Number(j.lon);
+          if (j.lat != null && Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) {
+            return resolve({ ok: true, lat, lon, prec: Number(j.prec) || null, metodo: j.metodo });
+          }
+          const apagada = j.estado === 'Denied' || /Denied|Disabled/.test(j.estado2 || '');
+          resolve({ ok: false, motivo: apagada ? 'apagada' : 'sin-dato', detalle: j });
+        } catch {
+          resolve({ ok: false, motivo: 'error', detalle: err ? err.message : String(stdout).slice(0, 300) });
+        }
+      });
+  }).finally(() => setTimeout(() => (ubicacionEnCurso = null), 0));
+  return ubicacionEnCurso;
+});
+ipcMain.handle('ubicacion:abrirAjustes', () => shell.openExternal('ms-settings:privacy-location'));
+
 ipcMain.on('ventana:llamar', (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   if (w && !w.isFocused()) w.flashFrame(true);

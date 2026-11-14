@@ -21,5 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   copiar: (txt) => ipcRenderer.invoke('portapapeles', txt),
   fotos: (lat, lon, dias) => ipcRenderer.invoke('fotos:buscar', lat, lon, dias),
   fotoImagen: (item, lat, lon, km, ancho, alto) => ipcRenderer.invoke('fotos:imagen', item, lat, lon, km, ancho, alto),
+  ubicacion: () => ipcRenderer.invoke('ubicacion:detectar'),
+  abrirAjustesUbicacion: () => ipcRenderer.invoke('ubicacion:abrirAjustes'),
   abrirLocal: (url) => ipcRenderer.invoke('abrir:local', url),
 });

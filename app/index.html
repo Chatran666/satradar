@@ -125,6 +125,11 @@
             <label>Longitud <input id="aj-lon" type="number" step="0.0001"></label>
           </div>
           <button id="aj-aplicar-ubic" class="boton">Aplicar ubicación</button>
+          <div id="ubic-windows">
+            <button id="aj-detectar-ubic" class="boton">📍 Detectar mi ubicación (wifi)</button>
+            <label class="check"><input type="checkbox" id="aj-ubic-auto"> Detectarla sola cada vez que abro la app</label>
+            <p id="aj-ubic-estado" class="nota">Usa el servicio de ubicación de Windows, que se guía por las redes wifi cercanas (o el GPS, si tu PC tiene). Suele acertar a menos de 100 metros. Tiene que estar prendido en Windows: Configuración → Privacidad y seguridad → Ubicación.</p>
+          </div>
         </details>
         <details class="sub-aj">
           <summary>Contaminación lumínica</summary>

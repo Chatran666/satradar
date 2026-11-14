@@ -19,7 +19,7 @@
     radRango: 'fc0013', radRadar: false, rigOn: false, rigHost: '127.0.0.1', rigPuerto: 4532,
     servCelular: false, servObs: false, servPuerto: 8770, actUrl: '',
     avisoCartel: true, mostrarGuia: true, fotosDias: 30, fotosDespejadas: false,
-    magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
+    ubicAuto: true, magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
     streamFormato: 'horizontal', streamLista: true, streamReloj: true, streamNombres: true, streamLetra: 120,
   };
   let aj = { ...DEFECTO };
@@ -1598,6 +1598,8 @@
     const enLista = Cielo.CIUDADES.some(([n]) => n === aj.ciudad);
     $('aj-ciudad').value = enLista ? aj.ciudad : '__otra';
     $('aj-lat').value = aj.lat; $('aj-lon').value = aj.lon;
+    $('aj-ubic-auto').checked = aj.ubicAuto;
+    $('ubic-windows').hidden = !(window.api && window.api.ubicacion);
     $('aj-cielo').value = aj.cielo;
     $('aj-minel').value = String(aj.minEl);
     $('aj-sol').value = String(aj.solMax);
@@ -1695,17 +1697,58 @@
     const c = Cielo.CIUDADES.find(([n]) => n === e.target.value);
     if (c) { $('aj-lat').value = c[1]; $('aj-lon').value = c[2]; }
   };
+  function cambiarUbicacion(lat, lon, nombre) {
+    aj.ciudad = nombre;
+    aj.lat = lat; aj.lon = lon;
+    guardarAjustes(); aplicarAjustesUI(); enviarConfig(); cargarClima();
+    fotosClave = ''; pasesFotosLista = null; ultimoPedidoPasesFotos = 0;
+    if (tabActiva === 'fotos') { pedirPasesFotos(); cargarFotos(true); }
+  }
   $('aj-aplicar-ubic').onclick = () => {
     const lat = parseFloat($('aj-lat').value), lon = parseFloat($('aj-lon').value);
     if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) return;
     const sel = $('aj-ciudad').value;
     const c = Cielo.CIUDADES.find(([n]) => n === sel);
-    aj.ciudad = c && Math.abs(c[1] - lat) < 0.01 && Math.abs(c[2] - lon) < 0.01 ? sel : 'Ubicación personalizada';
-    aj.lat = lat; aj.lon = lon;
-    guardarAjustes(); aplicarAjustesUI(); enviarConfig(); cargarClima();
-    fotosClave = ''; pasesFotosLista = null; ultimoPedidoPasesFotos = 0;
-    if (tabActiva === 'fotos') { pedirPasesFotos(); cargarFotos(true); }
+    cambiarUbicacion(lat, lon, c && Math.abs(c[1] - lat) < 0.01 && Math.abs(c[2] - lon) < 0.01 ? sel : 'Ubicación personalizada');
   };
+
+  // Ubicación por el servicio de Windows (wifi)
+  const distKm = (la1, lo1, la2, lo2) => {
+    const r = Math.PI / 180, x = (lo2 - lo1) * r * Math.cos(((la1 + la2) / 2) * r), y = (la2 - la1) * r;
+    return Math.hypot(x, y) * 6371;
+  };
+  async function detectarUbicacion(manual) {
+    if (!window.api || !window.api.ubicacion) return;
+    const est = $('aj-ubic-estado'), btn = $('aj-detectar-ubic');
+    if (manual) { est.textContent = 'Buscando tu ubicación… (puede tardar hasta 20 segundos)'; btn.disabled = true; }
+    let r;
+    try { r = await window.api.ubicacion(); } catch (e) { r = { ok: false, motivo: 'error' }; }
+    btn.disabled = false;
+    if (r && r.ok) {
+      const lat = Math.round(r.lat * 100000) / 100000, lon = Math.round(r.lon * 100000) / 100000;
+      const d = distKm(+aj.lat, +aj.lon, lat, lon) * 1000;
+      const prec = r.prec ? ` (margen ±${r.prec < 1000 ? Math.round(r.prec) + ' m' : (r.prec / 1000).toFixed(1) + ' km'})` : '';
+      // Si Windows solo la sabe por la IP (margen de varios km) no pisa una ubicación más precisa
+      if (r.prec && r.prec > 3000 && !manual) return;
+      if (d > 50 || manual) cambiarUbicacion(lat, lon, 'Mi ubicación (Windows)');
+      est.innerHTML = `Ubicación detectada: <b>${lat.toFixed(5)}°, ${lon.toFixed(5)}°</b>${prec}. ` +
+        (d > 50 ? `Se movió ${d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'} respecto de la que tenías.` : 'Ya estaba bien.') +
+        (r.prec && r.prec > 1000 ? ' Ojo: el margen es grande, Windows no encontró redes wifi para afinarla.' : '');
+      return;
+    }
+    if (!manual) return;
+    if (r && r.motivo === 'apagada') {
+      est.innerHTML = 'La ubicación está apagada en Windows. Prendé <b>"Servicios de ubicación"</b> y también <b>"Permitir que las aplicaciones de escritorio accedan a tu ubicación"</b>, y volvé a tocar el botón. <button id="ubic-abrir" class="boton">Abrir esa configuración</button>';
+      $('ubic-abrir').onclick = () => window.api.abrirAjustesUbicacion();
+    } else if (r && r.motivo === 'no-windows') {
+      est.textContent = 'Esto solo funciona en Windows.';
+    } else {
+      est.innerHTML = 'Windows no pudo dar la ubicación. Revisá que el wifi esté prendido y que la ubicación esté activada. <button id="ubic-abrir" class="boton">Abrir configuración de ubicación</button>';
+      $('ubic-abrir').onclick = () => window.api.abrirAjustesUbicacion();
+    }
+  }
+  $('aj-detectar-ubic').onclick = () => detectarUbicacion(true);
+  $('aj-ubic-auto').onchange = cambio('ubicAuto', Boolean, false);
   $('aj-cielo').onchange = cambio('cielo', id, true);
   $('aj-minel').onchange = cambio('minEl', Number, true);
   $('aj-sol').onchange = cambio('solMax', Number, true);
@@ -1848,6 +1891,7 @@
         try { srv = await (await fetch('/api/ajustes')).json(); } catch {}
         if (!modoObs) try { loc = JSON.parse(localStorage.getItem('satradar-celular-2') || 'null') || { panelOculto: true, barraOculta: false }; } catch {}
         // Tamaños y paneles son de cada pantalla: el celular no hereda los de la PC
+        for (const k of ['lat', 'lon', 'ciudad']) delete loc[k];
         if (!modoObs) for (const k of ['textoRadar', 'textoLista', 'grosorCuadricula', 'grosorTrayectos', 'panelOculto', 'barraOculta', 'brillo']) delete srv[k];
         return { ...srv, ...loc, observaciones: (loc.observaciones || srv.observaciones || []) };
       },
@@ -1885,6 +1929,7 @@
       redimensionar();
     }
     aplicarServidor();
+    if (aj.ubicAuto && !modoWeb) setTimeout(() => detectarUbicacion(false), 3000);
     if (window.api && window.api.version) window.api.version().then((v) => ($('act-version').textContent = 'Versión instalada: ' + v));
     setTimeout(() => buscarActualizacion(true), 8000);
     actualizarObsUI();

@@ -27,6 +27,9 @@ jobs:
             echo "YA_EXISTE=1" >> $GITHUB_ENV
             echo "La versión v$V ya está publicada; no hay nada que hacer."
           fi
+      - name: Probar detección de ubicación
+        continue-on-error: true
+        run: node build/probar-ubicacion.js
       - name: Dependencias
         if: env.YA_EXISTE != '1'
         run: npm ci --no-audit --no-fund
