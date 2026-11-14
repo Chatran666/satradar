@@ -352,3 +352,24 @@ body.obs.sin-reloj #hud-reloj { display: none !important; }
 #ficha-cuerpo .ficha-obs { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--linea); }
 #ficha-cuerpo .obs-btns button { font-size: 13px; padding: 5px 12px; height: auto; }
 #ficha .visor-botones { margin-top: 12px; justify-content: flex-end; }
+
+/* ---------- 2.3: color de letra y botón de menú ---------- */
+body.letra-verdeclaro:not(.rojo) { --texto: #b6e3c2; --texto-tenue: #78a585; --acento: #7ee09a; }
+body.letra-blanco:not(.rojo) { --texto: #e8ece9; --texto-tenue: #9aa39c; --acento: #8fe0a6; }
+#barra .sep { width: 1px; align-self: stretch; background: var(--linea-fuerte); margin: 0 4px; }
+#barra #b-panel, #b-menu-flotante {
+  background: var(--acento); color: #000; border: 1px solid var(--acento); font-weight: 700; padding: 5px 14px;
+}
+#barra #b-panel:hover, #b-menu-flotante:hover { filter: brightness(1.15); }
+#barra #b-panel.on { background: var(--boton); color: var(--acento); }
+#b-menu-flotante {
+  position: absolute; left: 46px; bottom: 8px; display: none; height: 26px; border-radius: 3px;
+  cursor: pointer; font: 700 12px "Segoe UI", sans-serif; padding: 0 12px;
+}
+#app.sin-barra.sin-panel #b-menu-flotante { display: block; }
+#app.sin-barra.sin-panel #hud-abajo-izq { left: 130px; }
+body.obs #b-menu-flotante { display: none !important; }
+@media (max-width: 760px) {
+  #barra #b-panel { padding: 6px 12px; }
+  #barra .sep { display: none; }
+}

@@ -21,6 +21,7 @@
     <div id="aviso-pase" hidden title="Tocá para cerrar"></div>
     <div id="aviso-act" hidden></div>
     <button id="b-mostrar-barra" title="Mostrar controles (tecla B)">▲</button>
+    <button id="b-menu-flotante" title="Abrir el menú (tecla P)">☰ Menú</button>
     <div id="aviso-carga"><div id="carga-caja"><div id="carga-texto">Cargando satélites…</div><div id="carga-barra"><div></div></div><div id="carga-detalle"></div></div></div>
   </main>
 
@@ -215,6 +216,11 @@
         <summary>Pantalla</summary>
         <details class="sub-aj" open>
           <summary>Colores y brillo</summary>
+          <label>Color de la letra <select id="aj-color-letra">
+            <option value="verde">Verde (el de siempre)</option>
+            <option value="verdeclaro">Verde claro</option>
+            <option value="blanco">Blanco</option>
+          </select></label>
           <label class="check"><input type="checkbox" id="aj-rojo"> Modo nocturno rojo (cuida la vista en la oscuridad)</label>
           <label>Brillo de pantalla <input type="range" id="aj-brillo" min="25" max="100" step="5"></label>
         </details>
@@ -232,7 +238,7 @@
         </details>
         <details class="sub-aj">
           <summary>Atajos de teclado</summary>
-          <p class="nota"><b>P</b>: ocultar o mostrar este panel (a la derecha aparece la lista de próximos pases).<br><b>B</b>: ocultar o mostrar la barra de abajo.<br><b>F11</b>: pantalla completa.</p>
+          <p class="nota"><b>P</b>: abrir o cerrar este menú (a la derecha aparece la lista de próximos pases).<br><b>B</b>: ocultar o mostrar la barra de abajo.<br><b>F11</b>: pantalla completa.</p>
         </details>
       </details>
 
@@ -402,6 +408,8 @@
 
   <footer id="barra">
     <div class="grupo">
+      <button id="b-panel" title="Abrir o cerrar el menú (tecla P)">☰ Menú</button>
+      <span class="sep"></span>
       <button data-salto="-3600000" title="1 hora atrás">−1h</button>
       <button data-salto="-600000" title="10 minutos atrás">−10m</button>
       <button id="b-pausa" title="Pausa">❚❚</button>
@@ -415,7 +423,6 @@
     </div>
     <div class="grupo">
  <button id="b-ocultar-barra" title="Ocultar esta barra (tecla B)">▼ Ocultar barra</button>
-      <button id="b-panel" title="Ocultar o mostrar el panel derecho (tecla P)">◧ Ocultar panel</button>
       <button id="b-sonido" title="Sonido">♪ Sonido</button>
       <button id="b-rojo" title="Modo nocturno rojo">● Modo rojo</button>
       <button id="b-pantalla" title="Pantalla completa (F11)">⛶</button>

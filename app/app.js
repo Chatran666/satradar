@@ -19,7 +19,7 @@
     radRango: 'fc0013', radRadar: false, rigOn: false, rigHost: '127.0.0.1', rigPuerto: 4532,
     servCelular: false, servObs: false, servPuerto: 8770, actUrl: '',
     avisoCartel: true, mostrarGuia: true, fotosDias: 30, fotosDespejadas: false,
-    ubicAuto: true, magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
+    colorLetra: 'verde', ubicAuto: true, magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
     streamFormato: 'horizontal', streamLista: true, streamReloj: true, streamNombres: true, streamLetra: 120,
   };
   let aj = { ...DEFECTO };
@@ -1593,6 +1593,7 @@
 
   function aplicarAjustesUI() {
     document.body.classList.toggle('rojo', aj.rojo);
+    for (const c of ['verdeclaro', 'blanco']) document.body.classList.toggle('letra-' + c, aj.colorLetra === c);
     $('app').style.filter = aj.brillo < 100 ? `brightness(${aj.brillo / 100})` : '';
     C = colores();
     const enLista = Cielo.CIUDADES.some(([n]) => n === aj.ciudad);
@@ -1632,7 +1633,8 @@
       requestAnimationFrame(redimensionar);
     }
     $('b-panel').classList.toggle('on', !oculto);
-    $('b-panel').textContent = oculto ? '◧ Mostrar panel' : '◧ Ocultar panel';
+    $('b-panel').textContent = oculto ? '☰ Menú' : '✕ Cerrar menú';
+    $('aj-color-letra').value = aj.colorLetra;
     $('aj-son-visible').checked = aj.sonidoVisible;
     $('aj-vol-visible').value = aj.volVisible;
     $('aj-son-aviso').checked = aj.sonidoAviso;
@@ -1756,6 +1758,7 @@
   $('aj-starlink').onchange = cambio('starlink', Boolean, true);
   $('aj-nombres').onchange = cambio('nombres', Boolean, false);
   $('aj-rojo').onchange = cambio('rojo', Boolean, false);
+  $('aj-color-letra').onchange = cambio('colorLetra', id, false);
   $('aj-brillo').oninput = cambio('brillo', Number, false);
   const conRedim = (fn) => (e) => { fn(e); redimensionar(); };
   $('aj-texto').oninput = conRedim(cambio('textoRadar', Number, false));
@@ -1775,6 +1778,7 @@
   $('b-cerrar-panel').onclick = alternarPanel;
   $('b-ocultar-barra').onclick = alternarBarra;
   $('b-mostrar-barra').onclick = alternarBarra;
+  $('b-menu-flotante').onclick = alternarPanel;
   window.addEventListener('keydown', (e) => {
     if (e.target.matches('input, select, textarea')) return;
     if (e.key === 'p' || e.key === 'P') alternarPanel();

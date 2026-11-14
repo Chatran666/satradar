@@ -1,7 +1,7 @@
 {
   "name": "satradar",
   "productName": "SatRadar",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Radar de satélites visibles a ojo desnudo",
   "main": "main.js",
   "author": "Mariano",
