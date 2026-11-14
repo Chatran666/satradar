@@ -2,7 +2,7 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const s = fs.readFileSync(require('path').join(__dirname, '..', 'main.js'), 'utf8');
-const m = s.match(/const SCRIPT_UBICACION = `([\s\S]*?)`;\n/);
+const m = s.match(/const SCRIPT_UBICACION = `([\s\S]*?)`;\r?\n/);
 const script = eval('`' + m[1] + '`');
 const cod = Buffer.from(script, 'utf16le').toString('base64');
 const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', cod], { timeout: 60000 }).toString();
