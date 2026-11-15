@@ -133,9 +133,27 @@
           </div>
         </details>
         <details class="sub-aj">
-          <summary>Contaminación lumínica</summary>
-          <label>Tipo de cielo <select id="aj-cielo"></select></label>
-          <p id="aj-cielo-info" class="nota"></p>
+          <summary>Qué tan débiles se muestran los satélites</summary>
+          <p class="nota">Acá se elige el límite de brillo. En magnitud, <b>cuanto más bajo el número, más brillante</b>: mag 1 se ve fácil, mag 3 cuesta en la ciudad. La app solo muestra los satélites más brillantes que el límite.</p>
+          <label>Cómo elegir el límite <select id="aj-mag-modo">
+            <option value="auto">Automático, según el tipo de cielo</option>
+            <option value="mano">A mano, con un número</option>
+          </select></label>
+          <div id="mag-auto">
+            <label>Tipo de cielo <select id="aj-cielo"></select></label>
+            <p id="aj-cielo-info" class="nota"></p>
+            <p class="nota">Si marcás pases con ✓ Lo vi / ✗ No, la app afina este límite sola (ver "Tus observaciones").</p>
+          </div>
+          <div id="mag-mano" hidden>
+            <label>Hasta mag <span id="aj-mag-hasta-v" class="valor"></span>
+              <input type="range" id="aj-mag-hasta" min="0.5" max="6" step="0.1"></label>
+            <p class="nota">Es el límite en una noche ideal, sin Luna ni nubes. Si en tu zona cuesta ver mag 3, probá con 2.5.</p>
+          </div>
+          <label>Ocultar los muy brillantes <select id="aj-mag-desde">
+            <option value="-9">No ocultar</option><option value="-2">Más brillantes que mag −2</option><option value="-1">Más brillantes que mag −1</option>
+            <option value="0">Más brillantes que mag 0</option><option value="1">Más brillantes que mag 1</option><option value="2">Más brillantes que mag 2</option>
+          </select></label>
+          <p class="nota">En los dos modos la app resta lo que tapan la Luna, el crepúsculo y las nubes. Límite en este momento: <b id="aj-lim-ahora">—</b></p>
         </details>
         <details class="sub-aj">
           <summary>Nubes</summary>
@@ -169,16 +187,7 @@
           <label>Cuando deja de verse <select id="aj-terminar">
             <option value="gris">Queda en gris tenue</option><option value="ocultar">Desaparece</option>
           </select></label>
-          <label class="check"><input type="checkbox" id="aj-mag-manual"> Elegir a mano el brillo de los satélites</label>
-          <div class="dos">
-            <label>Desde mag <select id="aj-mag-desde">
-              <option value="-9">Sin límite</option><option value="-2">−2</option><option value="-1">−1</option>
-              <option value="0">0</option><option value="1">1</option><option value="2">2</option>
-            </select></label>
-            <label>Hasta mag <span id="aj-mag-hasta-v" class="valor"></span>
-              <input type="range" id="aj-mag-hasta" min="0.5" max="6" step="0.1"></label>
-          </div>
-          <p class="nota">Cuanto más bajo el número, más brillante. Si en tu zona cuesta ver mag 3, poné "hasta 2.5" y solo vas a ver los que se distinguen fácil. "Desde" sirve para ocultar los muy brillantes. Igual se aplican la Luna, el crepúsculo y las nubes.</p>
+          <p class="nota">El brillo de los satélites que se muestran se elige en <b>Ubicación y cielo → Qué tan débiles se muestran los satélites</b>.</p>
           <label class="check"><input type="checkbox" id="aj-starlink"> Incluir Starlink</label>
           <label class="check"><input type="checkbox" id="aj-nombres"> Nombres de los satélites</label>
           <label class="check"><input type="checkbox" id="aj-guia"> Guía con estrellas en las listas ("aparece cerca de Sirio · pasa cerca de…")</label>
@@ -217,17 +226,23 @@
         <details class="sub-aj" open>
           <summary>Colores y brillo</summary>
           <label>Color de la letra <select id="aj-color-letra">
-            <option value="verde">Verde (el de siempre)</option>
             <option value="verdeclaro">Verde claro</option>
+            <option value="verde">Verde oscuro (el de antes)</option>
             <option value="blanco">Blanco</option>
+            <option value="gris">Gris claro</option>
+            <option value="celeste">Celeste</option>
+            <option value="cian">Cian</option>
+            <option value="lavanda">Lavanda</option>
           </select></label>
           <label class="check"><input type="checkbox" id="aj-rojo"> Modo nocturno rojo (cuida la vista en la oscuridad)</label>
           <label>Brillo de pantalla <input type="range" id="aj-brillo" min="25" max="100" step="5"></label>
         </details>
         <details class="sub-aj">
           <summary>Tamaños y grosores</summary>
-          <label>Letra del radar <span id="aj-texto-v" class="valor"></span>
+          <label>Letra del radar (nombres y puntos cardinales) <span id="aj-texto-v" class="valor"></span>
             <input type="range" id="aj-texto" min="70" max="220" step="10"></label>
+          <label>Letra de los datos de arriba (satélites cargados, Sol, Luna…) <span id="aj-texto-hud-v" class="valor"></span>
+            <input type="range" id="aj-texto-hud" min="70" max="220" step="10"></label>
           <label>Grosor de las líneas del radar <span id="aj-grosor-c-v" class="valor"></span>
             <input type="range" id="aj-grosor-c" min="50" max="400" step="25"></label>
           <label>Grosor de los trayectos <span id="aj-grosor-t-v" class="valor"></span>

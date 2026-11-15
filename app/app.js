@@ -10,7 +10,7 @@
     ciudad: 'Buenos Aires (CABA)', lat: -34.6037, lon: -58.3816,
     cielo: 'auto', minEl: 10, solMax: -6, alTerminar: 'gris',
     starlink: true, nombres: true, rojo: false, brillo: 80,
-    textoRadar: 100, grosorCuadricula: 100, grosorTrayectos: 100, panelOculto: false, barraOculta: false,
+    textoRadar: 100, textoHud: 100, grosorCuadricula: 100, grosorTrayectos: 100, panelOculto: false, barraOculta: false,
     textoLista: 120, nubes: 'auto', avisoMin: 2,
     sonido: true, volumen: 40, proxSinStarlink: false,
     silencio: false, sonidoVisible: true, volVisible: 40, sonidoAviso: true, volAviso: 60,
@@ -19,10 +19,11 @@
     radRango: 'fc0013', radRadar: false, rigOn: false, rigHost: '127.0.0.1', rigPuerto: 4532,
     servCelular: false, servObs: false, servPuerto: 8770, actUrl: '',
     avisoCartel: true, mostrarGuia: true, fotosDias: 30, fotosDespejadas: false,
-    colorLetra: 'verde', ubicAuto: true, magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
+    colorLetra: 'verdeclaro', ubicAuto: true, magManual: false, magHasta: 3.0, magDesde: -9, estrellasDesde: -9,
     streamFormato: 'horizontal', streamLista: true, streamReloj: true, streamNombres: true, streamLetra: 120,
   };
   let aj = { ...DEFECTO };
+  const COLORES_LETRA = ['verdeclaro', 'blanco', 'gris', 'celeste', 'cian', 'lavanda'];
 
   async function leerAjustes() {
     try {
@@ -193,8 +194,10 @@
     const c = cieloElegido();
     ambos({
       tipo: 'config',
-      cfg: { nelm: c.nelm + (aj.usarAprendido && ajusteAprendido().usable ? ajusteAprendido().c : 0), minEl: +aj.minEl, solMax: +aj.solMax, starlink: aj.starlink, alTerminar: aj.alTerminar, nubes: nubesParaMotor(),
-        magHasta: aj.magManual ? +aj.magHasta : null },
+      // Límite base en noche ideal: el del tipo de cielo (más lo aprendido) o el número elegido a mano.
+      // En los dos casos el motor le resta Luna, crepúsculo y nubes.
+      cfg: { nelm: aj.magManual ? +aj.magHasta + 0.5 : c.nelm + (aj.usarAprendido && ajusteAprendido().usable ? ajusteAprendido().c : 0), minEl: +aj.minEl, solMax: +aj.solMax, starlink: aj.starlink, alTerminar: aj.alTerminar, nubes: nubesParaMotor(),
+        magHasta: null },
       obs: { lat: +aj.lat, lon: +aj.lon, alt: 0.02 },
     });
     proximos = null;
@@ -364,7 +367,7 @@
     geo.w = r.width; geo.h = r.height;
     geo.cx = r.width / 2;
     geo.vertical = r.height > r.width * 1.15;
-    const margen = 16 + 18 * ft();
+    const margen = 16 + 18 * fc();
     if (geo.vertical) {
       // Celular parado: radar arriba, lista abajo
       geo.R = Math.max(50, Math.min(r.width / 2 - margen, r.height * 0.32));
@@ -378,6 +381,7 @@
   }
 
   const ft = () => (aj.textoRadar || 100) / 100;
+  const fc = () => Math.min(ft(), 1.3); // letras N/S/E/O: crecen poco para no achicar el radar
   const gc = () => (aj.grosorCuadricula || 100) / 100;
   const gt = () => (aj.grosorTrayectos || 100) / 100;
 
@@ -419,7 +423,7 @@
       g.stroke();
     }
     g.fillStyle = C.texto;
-    const f = ft();
+    const f = fc();
     const sep = 12 + 9 * f;
     g.font = `600 ${15 * f}px "Segoe UI", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -462,7 +466,7 @@
 
   // Limita los rojos ("por hacerse visibles") a los N más próximos
   // Brillo mínimo elegido a mano: oculta los más brillantes que "desde"
-  const pasaDesde = (mag) => !aj.magManual || !(aj.magDesde > -9) || mag >= aj.magDesde;
+  const pasaDesde = (mag) => !(aj.magDesde > -9) || mag >= aj.magDesde;
   function itemsEnRadar() {
     const n = +aj.maxPend || 0;
     const base = estado.items.filter((i) => pasaDesde(magMaxima(i)));
@@ -663,8 +667,9 @@
       `<span class="amarillo">Visibles ahora: ${vis}</span>   <span class="alerta">por hacerse visibles: ${pen}</span>`,
       `Sol: elev ${fmtGrado(sol)} (${fase})`,
       `Luna: az ${fmtGrado(estado.luna.az)}, elev ${fmtGrado(estado.luna.el)}, ilum ${Math.round(estado.luna.ilum * 100)}%`,
-      `Límite a ojo: mag ${estado.limite.toFixed(1)}  (${aj.magManual && Math.abs(estado.limite - aj.magHasta) < 0.05 ? 'elegido a mano' : 'cielo ' + c.nombre.toLowerCase() + (c.auto ? ', por población' : '')})`,
+      `Límite a ojo: mag ${estado.limite.toFixed(1)}  (${aj.magManual ? 'elegido a mano: ' + (+aj.magHasta).toFixed(1) + ' en noche ideal' : 'cielo ' + c.nombre.toLowerCase() + (c.auto ? ', por población' : '')})`,
     ];
+    if ($('aj-lim-ahora')) $('aj-lim-ahora').textContent = 'mag ' + estado.limite.toFixed(1);
     if (!aj.nubesOn) {
       // nubes apagadas: no se informa nada
     } else if (estado.penNubes > 0.05) {
@@ -1066,7 +1071,7 @@
       el.classList.remove('abajo');
       el.style.top = '';
       el.style.bottom = '';
-      const espacio = geo.w / 2 - geo.R - (12 + 9 * ft()) - 28;
+      const espacio = geo.w / 2 - geo.R - (12 + 9 * fc()) - 28;
       if ((!aj.panelOculto && !modoObs) || !estado || espacio < 170) { el.innerHTML = ''; return; }
       el.style.width = Math.min(espacio, 300 * (aj.textoLista / 100) + 60) + 'px';
       // Termina antes del texto de abajo a la derecha ("Órbitas: hace…")
@@ -1593,7 +1598,7 @@
 
   function aplicarAjustesUI() {
     document.body.classList.toggle('rojo', aj.rojo);
-    for (const c of ['verdeclaro', 'blanco']) document.body.classList.toggle('letra-' + c, aj.colorLetra === c);
+    for (const c of COLORES_LETRA) document.body.classList.toggle('letra-' + c, aj.colorLetra === c);
     $('app').style.filter = aj.brillo < 100 ? `brightness(${aj.brillo / 100})` : '';
     C = colores();
     const enLista = Cielo.CIUDADES.some(([n]) => n === aj.ciudad);
@@ -1621,7 +1626,8 @@
     $('aj-nubes').value = aj.nubes;
     $('aj-aviso').value = String(aj.avisoMin);
     actualizarInfoNubes();
-    document.documentElement.style.setProperty('--hud-px', (12 * (1 + (ft() - 1) * 0.4)).toFixed(1) + 'px');
+    document.documentElement.style.setProperty('--hud-px', (12 * (aj.textoHud || 100) / 100).toFixed(1) + 'px');
+    $('aj-texto-hud').value = aj.textoHud; $('aj-texto-hud-v').textContent = aj.textoHud + '%';
     const oculto = !!aj.panelOculto;
     if ($('app').classList.contains('sin-panel') !== oculto) {
       $('app').classList.toggle('sin-panel', oculto);
@@ -1646,11 +1652,11 @@
     $('aj-estrellas-mag').value = String(aj.estrellasMag);
     $('aj-estrellas-nombres').checked = aj.estrellasNombres;
     $('aj-estrellas-desde').value = String(aj.estrellasDesde);
-    $('aj-mag-manual').checked = aj.magManual;
+    $('aj-mag-modo').value = aj.magManual ? 'mano' : 'auto';
+    $('mag-auto').hidden = aj.magManual; $('mag-mano').hidden = !aj.magManual;
     $('aj-mag-desde').value = String(aj.magDesde);
     $('aj-mag-hasta').value = aj.magHasta;
     $('aj-mag-hasta-v').textContent = 'mag ' + (+aj.magHasta).toFixed(1);
-    $('aj-mag-desde').disabled = $('aj-mag-hasta').disabled = !aj.magManual;
     $('aj-vista').value = aj.vista;
     $('aj-planetas').checked = aj.planetas;
     $('rad-rango').value = aj.radRango;
@@ -1758,10 +1764,11 @@
   $('aj-starlink').onchange = cambio('starlink', Boolean, true);
   $('aj-nombres').onchange = cambio('nombres', Boolean, false);
   $('aj-rojo').onchange = cambio('rojo', Boolean, false);
-  $('aj-color-letra').onchange = cambio('colorLetra', id, false);
+  $('aj-color-letra').onchange = (e) => { aj.colorLetraElegido = true; cambio('colorLetra', id, false)(e); };
   $('aj-brillo').oninput = cambio('brillo', Number, false);
   const conRedim = (fn) => (e) => { fn(e); redimensionar(); };
   $('aj-texto').oninput = conRedim(cambio('textoRadar', Number, false));
+  $('aj-texto-hud').oninput = cambio('textoHud', Number, false);
   $('aj-grosor-c').oninput = cambio('grosorCuadricula', Number, false);
   $('aj-grosor-t').oninput = cambio('grosorTrayectos', Number, false);
   $('aj-texto-lista').oninput = (e) => { cambio('textoLista', Number, false)(e); actualizarListaLateral(); };
@@ -1769,7 +1776,7 @@
   $('aj-aviso').onchange = cambio('avisoMin', Number, false);
   $('aviso-pase').onclick = () => ($('aviso-pase').hidden = true);
   $('aj-restablecer-vista').onclick = () => {
-    aj.textoRadar = 100; aj.grosorCuadricula = 100; aj.grosorTrayectos = 100; aj.textoLista = 120;
+    aj.textoRadar = 100; aj.textoHud = 100; aj.grosorCuadricula = 100; aj.grosorTrayectos = 100; aj.textoLista = 120;
     guardarAjustes(); aplicarAjustesUI(); redimensionar();
   };
   function alternarPanel() { aj.panelOculto = !aj.panelOculto; guardarAjustes(); aplicarAjustesUI(); actualizarListaLateral(); }
@@ -1797,7 +1804,7 @@
   $('aj-estrellas-nombres').onchange = cambio('estrellasNombres', Boolean, false);
   $('aj-estrellas-desde').onchange = cambio('estrellasDesde', Number, false);
   const refrescarListas = () => { actualizarProximos(); actualizarListaLateral(); actualizarNoches(); };
-  $('aj-mag-manual').onchange = (e) => { cambio('magManual', Boolean, true)(e); refrescarListas(); };
+  $('aj-mag-modo').onchange = (e) => { aj.magManual = e.target.value === 'mano'; guardarAjustes(); aplicarAjustesUI(); enviarConfig(); refrescarListas(); };
   $('aj-mag-desde').onchange = (e) => { cambio('magDesde', Number, false)(e); refrescarListas(); };
   let timerMag = null;
   $('aj-mag-hasta').oninput = (e) => {
@@ -1896,7 +1903,7 @@
         if (!modoObs) try { loc = JSON.parse(localStorage.getItem('satradar-celular-2') || 'null') || { panelOculto: true, barraOculta: false }; } catch {}
         // Tamaños y paneles son de cada pantalla: el celular no hereda los de la PC
         for (const k of ['lat', 'lon', 'ciudad']) delete loc[k];
-        if (!modoObs) for (const k of ['textoRadar', 'textoLista', 'grosorCuadricula', 'grosorTrayectos', 'panelOculto', 'barraOculta', 'brillo']) delete srv[k];
+        if (!modoObs) for (const k of ['textoRadar', 'textoHud', 'textoLista', 'grosorCuadricula', 'grosorTrayectos', 'panelOculto', 'barraOculta', 'brillo']) delete srv[k];
         return { ...srv, ...loc, observaciones: (loc.observaciones || srv.observaciones || []) };
       },
       guardarAjustes: async (a) => { if (!modoObs) try { localStorage.setItem('satradar-celular-2', JSON.stringify(a)); } catch {} },
@@ -1916,6 +1923,8 @@
       aj.volVisible = guardados.volumen ?? 40;
     }
     if (aj.nubes === 'despejado') { aj.nubes = 'auto'; aj.nubesOn = false; }
+    // 2.4: el verde claro pasa a ser el color de letra por defecto
+    if (!guardados.colorLetraElegido) aj.colorLetra = 'verdeclaro';
     llenarSelects();
     window.addEventListener('resize', redimensionar);
     redimensionar();
@@ -1928,7 +1937,7 @@
       if (params.get('reloj') === '0') document.body.classList.add('sin-reloj');
       if (params.get('nombres') === '0') aj.nombres = false;
       const letra = +params.get('letra');
-      if (letra >= 50 && letra <= 300) { aj.textoRadar = letra; aj.textoLista = letra; }
+      if (letra >= 50 && letra <= 300) { aj.textoRadar = letra; aj.textoLista = letra; aj.textoHud = letra; }
       aplicarAjustesUI();
       redimensionar();
     }

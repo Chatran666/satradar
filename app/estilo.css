@@ -373,3 +373,8 @@ body.obs #b-menu-flotante { display: none !important; }
   #barra #b-panel { padding: 6px 12px; }
   #barra .sep { display: none; }
 }
+body.letra-gris:not(.rojo) { --texto: #cfd3d0; --texto-tenue: #8a908b; }
+body.letra-celeste:not(.rojo) { --texto: #a9d4f5; --texto-tenue: #6d93b3; --acento: #6fb8ff; }
+body.letra-cian:not(.rojo) { --texto: #93efe9; --texto-tenue: #5aa8a3; --acento: #3fd9cf; }
+body.letra-lavanda:not(.rojo) { --texto: #cdbff2; --texto-tenue: #8a7fb0; --acento: #a58cf0; }
+#mag-auto[hidden], #mag-mano[hidden] { display: none; }
