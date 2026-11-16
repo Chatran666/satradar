@@ -1640,6 +1640,7 @@
     }
     $('b-panel').classList.toggle('on', !oculto);
     $('b-panel').textContent = oculto ? '☰ Menú' : '✕ Cerrar menú';
+    $('b-menu-flotante').textContent = oculto ? '☰ Menú' : '✕ Cerrar menú';
     $('aj-color-letra').value = aj.colorLetra;
     $('aj-son-visible').checked = aj.sonidoVisible;
     $('aj-vol-visible').value = aj.volVisible;
