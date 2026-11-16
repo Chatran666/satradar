@@ -302,12 +302,16 @@ function crearVentana() {
     title: 'SatRadar',
     icon: path.join(__dirname, 'app', 'icono.png'),
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  // Arranca maximizada (ocupa toda la pantalla, con la barra de Windows a la vista)
+  win.maximize();
+  win.show();
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F11') win.setFullScreen(!win.isFullScreen());
